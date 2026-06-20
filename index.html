@@ -2,470 +2,860 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>多言語チェックリストシステム / Hệ Thống Checklist Đa Ngôn Ngữ / 多语言检查清单系统</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>研修生チェックリスト 多言語翻訳システム</title>
 <style>
-  :root {
-    --bg: #ffffff;
-    --surface: #f5f5f5;
-    --border: #e0e0e0;
-    --text: #1a1a1a;
-    --text-secondary: #555;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
   body {
-    font-family: -apple-system, 'Hiragino Sans', 'Noto Sans SC', 'Noto Sans', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    padding: 20px;
-    max-width: 960px;
-    margin: 0 auto;
+    font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    background: #fdf8f0;
+    color: #2c1810;
+    min-height: 100vh;
   }
-  h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
-  .subtitle { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 20px; }
 
-  .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
-  .tab {
-    padding: 7px 18px; border-radius: 20px; border: 2px solid transparent;
-    cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: all 0.15s;
-    background: var(--surface);
+  .app-header {
+    background: #b91c1c;
+    color: #fff;
+    padding: 18px 32px;
   }
-  .tab.ja { border-color: #1565c0; color: #1565c0; }
-  .tab.ja.active { background: #1565c0; color: #fff; }
-  .tab.vn { border-color: #c62828; color: #c62828; }
-  .tab.vn.active { background: #c62828; color: #fff; }
-  .tab.cn { border-color: #e65100; color: #e65100; }
-  .tab.cn.active { background: #e65100; color: #fff; }
+  .app-header h1 { font-size: 20px; letter-spacing: .08em; font-weight: 700; }
+  .app-header p  { font-size: 12px; opacity: .75; margin-top: 3px; }
 
-  .lang-section { display: none; }
-  .lang-section.active { display: block; }
-
-  .cards-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
-  @media (max-width: 600px) { .cards-row { grid-template-columns: 1fr; } }
-  .card {
-    background: var(--surface);
-    border-radius: 10px; padding: 16px;
-    border-left: 4px solid var(--card-color, #999);
+  .steps {
+    background: #fff9f0;
+    border-bottom: 1px solid #f4c7b0;
+    display: flex;
+    padding: 0 32px;
+    overflow-x: auto;
   }
-  .card h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--card-color, #999); margin-bottom: 8px; }
-  .card p { font-size: 0.92rem; line-height: 1.6; }
-
-  .flow-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; color: var(--text-secondary); }
-  .flow { display: flex; align-items: stretch; gap: 0; margin-bottom: 20px; flex-wrap: wrap; }
-  .flow-step {
-    flex: 1; min-width: 120px;
-    background: var(--surface);
-    border-radius: 8px;
-    padding: 12px 10px;
-    text-align: center;
-    position: relative;
-    border: 2px solid var(--border);
+  .step {
+    padding: 14px 18px;
+    font-size: 13px;
+    color: #9ca3af;
+    border-bottom: 3px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    white-space: nowrap;
+    cursor: default;
   }
-  .flow-step .icon { font-size: 1.6rem; margin-bottom: 6px; }
-  .flow-step .label { font-size: 0.78rem; font-weight: 600; line-height: 1.4; }
-  .flow-step .sub { font-size: 0.68rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.3; }
-  .flow-arrow {
+  .step.active { color: #b91c1c; border-bottom-color: #b91c1c; font-weight: 700; }
+  .step.done   { color: #166534; }
+  .step-num {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: #e5e7eb; color: #6b7280;
+    font-size: 11px; font-weight: 700;
     display: flex; align-items: center; justify-content: center;
-    font-size: 1.1rem; color: var(--text-secondary);
-    padding: 0 4px; min-width: 24px;
+    flex-shrink: 0;
   }
-  .step-oracle { border-color: #1565c0; }
-  .step-filemaker { border-color: #7b1fa2; }
-  .step-csv { border-color: #00695c; }
-  .step-translate { border-color: #e65100; }
-  .step-folder { border-color: #0277bd; }
-  .step-checklist { border-color: #2e7d32; }
+  .step.active .step-num { background: #b91c1c; color: #fff; }
+  .step.done   .step-num { background: #166534; color: #fff; }
 
-  .output-section { background: var(--surface); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-  .output-section h3 { font-size: 0.85rem; font-weight: 700; margin-bottom: 12px; color: var(--text-secondary); }
-  .checklist-preview {
-    background: var(--bg);
-    border: 1px solid var(--border);
+  .main { max-width: 820px; margin: 0 auto; padding: 28px 20px; }
+
+  .card {
+    background: #fff;
+    border: 1px solid #f4c7b0;
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 18px;
+  }
+  .card-title {
+    font-size: 15px; font-weight: 700;
+    color: #7f1d1d;
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* LLM設定 */
+  .llm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .field label {
+    display: block;
+    font-size: 12px; color: #78350f;
+    margin-bottom: 5px; letter-spacing: .04em;
+  }
+  .field input, .field select {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #f4c7b0;
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: inherit;
+    background: #fff9f0;
+    color: #2c1810;
+    outline: none;
+  }
+  .field input:focus, .field select:focus {
+    border-color: #b91c1c;
+    background: #fff;
+  }
+  .field-full { grid-column: 1 / -1; }
+
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 12px; font-weight: 700;
+  }
+  .status-badge.ok      { background: #dcfce7; color: #166534; }
+  .status-badge.ng      { background: #fee2e2; color: #991b1b; }
+  .status-badge.testing { background: #fde8d0; color: #92400e; }
+
+  .model-list {
+    display: flex; flex-wrap: wrap; gap: 7px;
+    margin-top: 10px;
+  }
+  .model-chip {
+    padding: 5px 12px;
+    border: 1.5px solid #f4c7b0;
+    border-radius: 999px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  .model-chip:hover { background: #fdf3e7; border-color: #b91c1c; }
+
+  /* ドロップゾーン */
+  .dropzone {
+    border: 2px dashed #fca5a5;
+    border-radius: 10px;
+    padding: 44px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    background: #fff9f0;
+  }
+  .dropzone:hover, .dropzone.dragover { background: #fde8d0; border-color: #b91c1c; }
+  .dropzone .dz-icon { font-size: 44px; margin-bottom: 10px; }
+  .dropzone .dz-main { font-size: 15px; font-weight: 700; color: #7f1d1d; }
+  .dropzone .dz-sub  { font-size: 12px; color: #9ca3af; margin-top: 5px; }
+  #file-input { display: none; }
+
+  /* 言語カード */
+  .lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .lang-card {
+    border: 2px solid #f4c7b0;
     border-radius: 8px;
-    padding: 14px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    display: flex; align-items: center; gap: 10px;
+    user-select: none;
   }
-  .checklist-header {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    border-bottom: 2px solid var(--border); padding-bottom: 10px; margin-bottom: 12px;
-    flex-wrap: wrap; gap: 8px;
+  .lang-card:hover   { background: #fdf3e7; }
+  .lang-card.selected { border-color: #b91c1c; background: #fff9f0; }
+  .lang-card .flag   { font-size: 26px; }
+  .lang-card .lang-name { font-size: 14px; font-weight: 700; }
+  .lang-card .lang-sub  { font-size: 11px; color: #9ca3af; }
+  .lang-card input[type=checkbox] { margin-left: auto; width: 17px; height: 17px; accent-color: #b91c1c; }
+
+  /* 列チップ */
+  .col-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .col-chip {
+    padding: 6px 14px;
+    border: 1.5px solid #f4c7b0;
+    border-radius: 999px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+    user-select: none;
   }
-  .checklist-header h4 { font-size: 1rem; font-weight: 700; }
-  .checklist-header .meta { font-size: 0.75rem; color: var(--text-secondary); }
-  .checklist-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-  .checklist-table th {
-    background: var(--surface);
-    padding: 7px 10px; text-align: left;
-    border-bottom: 2px solid var(--border);
-    font-size: 0.75rem;
+  .col-chip:hover    { background: #fdf3e7; }
+  .col-chip.selected { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+
+  /* プロンプトエディタ */
+  .prompt-editor {
+    width: 100%;
+    min-height: 80px;
+    padding: 10px 12px;
+    border: 1px solid #f4c7b0;
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: "Courier New", monospace;
+    line-height: 1.6;
+    background: #fff9f0;
+    color: #2c1810;
+    resize: vertical;
+    outline: none;
   }
-  .checklist-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border);
-    vertical-align: top;
+  .prompt-editor:focus { border-color: #b91c1c; background: #fff; }
+  .prompt-var { color: #b91c1c; font-weight: 700; }
+
+  /* プログレス */
+  .progress-bar-bg {
+    height: 10px; background: #fde8d0;
+    border-radius: 5px; overflow: hidden;
+    margin-bottom: 6px;
   }
-  .checklist-table tr:last-child td { border-bottom: none; }
-  .badge {
-    display: inline-block; padding: 2px 8px; border-radius: 10px;
-    font-size: 0.72rem; font-weight: 600;
+  .progress-bar-fill {
+    height: 100%; background: #b91c1c;
+    border-radius: 5px;
+    transition: width .3s; width: 0%;
   }
-  .badge-warn { background: #fff3e0; color: #e65100; }
-  .badge-ok { background: #e8f5e9; color: #2e7d32; }
-  .badge-check { background: #e3f2fd; color: #1565c0; }
-  .check-box {
-    width: 18px; height: 18px; border: 2px solid #999;
-    border-radius: 4px; display: inline-block;
+  .progress-label { font-size: 12px; color: #92400e; }
+
+  /* ログ */
+  .log-box {
+    background: #fff9f0;
+    border: 1px solid #f4c7b0;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 12px;
+    font-family: "Courier New", monospace;
+    height: 180px;
+    overflow-y: auto;
+    line-height: 1.8;
+    color: #3b1209;
+    white-space: pre-wrap;
+    word-break: break-all;
   }
-  .note-box {
-    background: #fff8e1; border-left: 3px solid #ffa000;
-    padding: 10px 12px; border-radius: 0 6px 6px 0;
-    font-size: 0.82rem; margin-top: 12px; line-height: 1.6;
+
+  /* 結果テーブル */
+  .lang-tabs { display: flex; gap: 0; margin-bottom: -1px; flex-wrap: wrap; }
+  .lang-tab {
+    padding: 9px 18px;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid #f4c7b0;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    background: #fff9f0;
+    color: #9ca3af;
+    margin-right: 4px;
+  }
+  .lang-tab.active { background: #fff; color: #b91c1c; font-weight: 700; }
+  .result-table-wrap {
+    overflow-x: auto;
+    border: 1px solid #f4c7b0;
+    border-radius: 0 8px 8px 8px;
+    background: #fff;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { background: #7f1d1d; color: #fff; padding: 9px 11px; text-align: left; white-space: nowrap; }
+  tbody td { padding: 9px 11px; border-bottom: 1px solid #f4c7b0; vertical-align: top; }
+  tbody tr:hover td { background: #fdf3e7; }
+
+  /* ボタン */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 20px;
+    border-radius: 8px; border: none;
+    font-size: 14px; font-family: inherit; font-weight: 700;
+    cursor: pointer;
+    transition: opacity .15s, transform .1s;
+    letter-spacing: .03em;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary { background: #b91c1c; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #991b1b; }
+  .btn-green  { background: #166534; color: #fff; }
+  .btn-green:hover:not(:disabled) { background: #14532d; }
+  .btn-blue   { background: #1e40af; color: #fff; }
+  .btn-blue:hover:not(:disabled) { background: #1e3a8a; }
+  .btn-ghost  { background: transparent; color: #b91c1c; border: 1.5px solid #b91c1c; }
+  .btn-ghost:hover { background: #fde8d0; }
+  .btn-sm { padding: 7px 14px; font-size: 12px; }
+
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+
+  .file-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px;
+    background: #fdf3e7; border: 1px solid #f4c7b0;
+    border-radius: 8px; font-size: 13px; font-weight: 700; color: #78350f;
+  }
+
+  .section { display: none; }
+  .section.visible { display: block; }
+
+  .note { font-size: 11px; color: #9ca3af; margin-top: 8px; line-height: 1.7; }
+
+  hr { border: none; border-top: 1px solid #f4c7b0; margin: 18px 0; }
+
+  .warn-box {
+    background: #fef9c3; border: 1px solid #fde047;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #713f12; line-height: 1.7;
   }
 </style>
 </head>
 <body>
 
-<div class="tabs">
-  <button class="tab ja active" onclick="switchLang('ja')">🇯🇵 日本語</button>
-  <button class="tab vn" onclick="switchLang('vn')">🇻🇳 Tiếng Việt</button>
-  <button class="tab cn" onclick="switchLang('cn')">🇨🇳 中文</button>
+<div class="app-header">
+  <h1>研修生チェックリスト　多言語翻訳システム</h1>
+  <p>ローカルLLM（Ollama）で翻訳 ─ インターネット不要・社内データ安全</p>
 </div>
 
-<!-- ===== JAPANESE ===== -->
-<div class="lang-section active" id="sec-ja">
-  <h1>多言語チェックリストシステム</h1>
-  <p class="subtitle">外国人技術研修生のための日本語伝票自動翻訳ワークフロー</p>
-
-  <div class="cards-row">
-    <div class="card" style="--card-color: #c62828;">
-      <h3>課題</h3>
-      <p>ベトナム・中国などの技術研修生が<strong>日本語の伝票を読めず</strong>、注意点の確認が困難。ミスや見落としのリスクがある。</p>
-    </div>
-    <div class="card" style="--card-color: #2e7d32;">
-      <h3>解決策</h3>
-      <p>Oracle→FileMaker→CSV→自動翻訳→FileMakerの流れで、<strong>母国語のチェックリスト伝票</strong>を自動生成する。</p>
-    </div>
-  </div>
-
-  <div class="flow-title">処理フロー</div>
-  <div class="flow">
-    <div class="flow-step step-oracle">
-      <div class="icon">🗄️</div>
-      <div class="label">Oracle DB</div>
-      <div class="sub">生産データ格納</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-filemaker">
-      <div class="icon">📋</div>
-      <div class="label">FileMaker抽出</div>
-      <div class="sub">必要情報を取得</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-csv">
-      <div class="icon">📄</div>
-      <div class="label">CSV出力</div>
-      <div class="sub">指定フォーマット</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-translate">
-      <div class="icon">🌐</div>
-      <div class="label">自動翻訳</div>
-      <div class="sub">受信時即時変換</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-folder">
-      <div class="icon">📁</div>
-      <div class="label">フォルダ出力</div>
-      <div class="sub">言語別に保存</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-checklist">
-      <div class="icon">✅</div>
-      <div class="label">FM読込・印刷</div>
-      <div class="sub">チェックリスト完成</div>
-    </div>
-  </div>
-
-  <div class="output-section">
-    <h3>出力イメージ — チェックリスト伝票（ベトナム語版）</h3>
-    <div class="checklist-preview">
-      <div class="checklist-header">
-        <div>
-          <h4>Phiếu Kiểm Tra Sản Xuất / 製造チェックリスト</h4>
-          <div class="meta">ロット: LT-2026-0613 ／ 工程: 組立ライン3</div>
-        </div>
-        <div class="meta">2026/06/13</div>
-      </div>
-      <table class="checklist-table">
-        <thead>
-          <tr>
-            <th>No.</th>
-            <th>項目（日本語）</th>
-            <th>Mục kiểm tra (Tiếng Việt)</th>
-            <th>重要度</th>
-            <th>確認</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>1</td>
-            <td>トルク確認 35N·m</td>
-            <td>Kiểm tra mô-men xoắn 35N·m</td>
-            <td><span class="badge badge-warn">要注意</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-          <tr>
-            <td>2</td>
-            <td>防水シール貼付け</td>
-            <td>Dán miếng đệm chống nước</td>
-            <td><span class="badge badge-warn">要注意</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-          <tr>
-            <td>3</td>
-            <td>外観検査（キズなし）</td>
-            <td>Kiểm tra ngoại quan (không có vết xước)</td>
-            <td><span class="badge badge-check">標準</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-          <tr>
-            <td>4</td>
-            <td>数量確認 50個</td>
-            <td>Xác nhận số lượng 50 cái</td>
-            <td><span class="badge badge-ok">通常</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="note-box">
-        ⚠️ <strong>注意事項 / Lưu ý:</strong> ロットLT-2026-0613は防水処理が変更されています。従来の手順と異なるため必ず確認してください。<br>
-        <em>Lô LT-2026-0613 đã thay đổi quy trình chống nước. Vui lòng xác nhận vì khác với quy trình thông thường.</em>
-      </div>
-    </div>
-  </div>
+<div class="steps">
+  <div class="step active" id="nav-0"><span class="step-num">0</span>LLM設定</div>
+  <div class="step" id="nav-1"><span class="step-num">1</span>CSVアップロード</div>
+  <div class="step" id="nav-2"><span class="step-num">2</span>翻訳設定</div>
+  <div class="step" id="nav-3"><span class="step-num">3</span>翻訳中</div>
+  <div class="step" id="nav-4"><span class="step-num">4</span>結果・ダウンロード</div>
 </div>
 
-<!-- ===== VIETNAMESE ===== -->
-<div class="lang-section" id="sec-vn">
-  <h1>Hệ Thống Checklist Đa Ngôn Ngữ</h1>
-  <p class="subtitle">Quy trình tự động dịch phiếu tiếng Nhật cho thực tập sinh kỹ thuật nước ngoài</p>
+<div class="main">
 
-  <div class="cards-row">
-    <div class="card" style="--card-color: #c62828;">
-      <h3>Vấn đề</h3>
-      <p>Thực tập sinh Việt Nam, Trung Quốc <strong>không đọc được phiếu tiếng Nhật</strong>, khó xác nhận các điểm chú ý. Có nguy cơ xảy ra lỗi và bỏ sót.</p>
-    </div>
-    <div class="card" style="--card-color: #2e7d32;">
-      <h3>Giải pháp</h3>
-      <p>Theo luồng Oracle→FileMaker→CSV→Tự động dịch→FileMaker, <strong>tự động tạo phiếu checklist bằng tiếng mẹ đẻ</strong>.</p>
-    </div>
-  </div>
-
-  <div class="flow-title">Luồng xử lý</div>
-  <div class="flow">
-    <div class="flow-step step-oracle">
-      <div class="icon">🗄️</div>
-      <div class="label">Oracle DB</div>
-      <div class="sub">Lưu dữ liệu sản xuất</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-filemaker">
-      <div class="icon">📋</div>
-      <div class="label">Trích xuất FileMaker</div>
-      <div class="sub">Lấy thông tin cần thiết</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-csv">
-      <div class="icon">📄</div>
-      <div class="label">Xuất CSV</div>
-      <div class="sub">Định dạng quy định</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-translate">
-      <div class="icon">🌐</div>
-      <div class="label">Tự động dịch</div>
-      <div class="sub">Dịch ngay khi nhận</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-folder">
-      <div class="icon">📁</div>
-      <div class="label">Xuất thư mục</div>
-      <div class="sub">Lưu theo ngôn ngữ</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-checklist">
-      <div class="icon">✅</div>
-      <div class="label">FM đọc & in</div>
-      <div class="sub">Hoàn thành checklist</div>
-    </div>
-  </div>
-
-  <div class="output-section">
-    <h3>Ví dụ đầu ra — Phiếu Kiểm Tra (Tiếng Việt)</h3>
-    <div class="checklist-preview">
-      <div class="checklist-header">
-        <div>
-          <h4>Phiếu Kiểm Tra Sản Xuất</h4>
-          <div class="meta">Lô: LT-2026-0613 ／ Công đoạn: Dây chuyền lắp ráp 3</div>
+  <!-- STEP 0: LLM設定 -->
+  <div class="section visible" id="sec-0">
+    <div class="card">
+      <div class="card-title">🤖 ローカルLLM（Ollama）の設定</div>
+      <div class="llm-grid">
+        <div class="field">
+          <label>APIの種類</label>
+          <select id="api-type" onchange="onApiTypeChange()">
+            <option value="ollama">Ollama（標準）</option>
+            <option value="openai">OpenAI互換（LM Studio など）</option>
+          </select>
         </div>
-        <div class="meta">2026/06/13</div>
-      </div>
-      <table class="checklist-table">
-        <thead>
-          <tr>
-            <th>No.</th>
-            <th>Mục kiểm tra</th>
-            <th>Mức độ quan trọng</th>
-            <th>Xác nhận</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>1</td>
-            <td>Kiểm tra mô-men xoắn 35N·m</td>
-            <td><span class="badge badge-warn">Chú ý</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-          <tr>
-            <td>2</td>
-            <td>Dán miếng đệm chống nước</td>
-            <td><span class="badge badge-warn">Chú ý</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-          <tr>
-            <td>3</td>
-            <td>Kiểm tra ngoại quan (không có vết xước)</td>
-            <td><span class="badge badge-check">Tiêu chuẩn</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-          <tr>
-            <td>4</td>
-            <td>Xác nhận số lượng 50 cái</td>
-            <td><span class="badge badge-ok">Thông thường</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="note-box">
-        ⚠️ <strong>Lưu ý quan trọng:</strong> Lô LT-2026-0613 đã thay đổi quy trình chống nước. Vui lòng xác nhận vì khác với quy trình thông thường.
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ===== CHINESE ===== -->
-<div class="lang-section" id="sec-cn">
-  <h1>多语言检查清单系统</h1>
-  <p class="subtitle">为外籍技术实习生自动翻译日语单据的工作流程</p>
-
-  <div class="cards-row">
-    <div class="card" style="--card-color: #c62828;">
-      <h3>问题</h3>
-      <p>越南、中国等技术实习生<strong>无法阅读日语单据</strong>，难以确认注意事项。存在出错和遗漏的风险。</p>
-    </div>
-    <div class="card" style="--card-color: #2e7d32;">
-      <h3>解决方案</h3>
-      <p>通过Oracle→FileMaker→CSV→自动翻译→FileMaker的流程，<strong>自动生成母语检查清单单据</strong>。</p>
-    </div>
-  </div>
-
-  <div class="flow-title">处理流程</div>
-  <div class="flow">
-    <div class="flow-step step-oracle">
-      <div class="icon">🗄️</div>
-      <div class="label">Oracle DB</div>
-      <div class="sub">存储生产数据</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-filemaker">
-      <div class="icon">📋</div>
-      <div class="label">FileMaker提取</div>
-      <div class="sub">获取所需信息</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-csv">
-      <div class="icon">📄</div>
-      <div class="label">CSV输出</div>
-      <div class="sub">指定格式</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-translate">
-      <div class="icon">🌐</div>
-      <div class="label">自动翻译</div>
-      <div class="sub">接收时立即转换</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-folder">
-      <div class="icon">📁</div>
-      <div class="label">文件夹输出</div>
-      <div class="sub">按语言分类保存</div>
-    </div>
-    <div class="flow-arrow">→</div>
-    <div class="flow-step step-checklist">
-      <div class="icon">✅</div>
-      <div class="label">FM读取・打印</div>
-      <div class="sub">完成检查清单</div>
-    </div>
-  </div>
-
-  <div class="output-section">
-    <h3>输出示例 — 检查清单单据（中文版）</h3>
-    <div class="checklist-preview">
-      <div class="checklist-header">
-        <div>
-          <h4>生产检查清单</h4>
-          <div class="meta">批次: LT-2026-0613 ／ 工序: 组装线3</div>
+        <div class="field">
+          <label>エンドポイントURL</label>
+          <input type="text" id="api-url" value="http://localhost:11434" placeholder="http://localhost:11434">
         </div>
-        <div class="meta">2026/06/13</div>
+        <div class="field field-full">
+          <label>モデル名</label>
+          <input type="text" id="model-name" value="llama3.2" placeholder="例: llama3.2  qwen2.5  gemma2">
+          <div class="model-list" id="model-list">
+            <span style="font-size:11px;color:#9ca3af">接続テスト後にモデル一覧を取得します</span>
+          </div>
+        </div>
       </div>
-      <table class="checklist-table">
-        <thead>
-          <tr>
-            <th>No.</th>
-            <th>检查项目</th>
-            <th>重要程度</th>
-            <th>确认</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>1</td>
-            <td>确认扭矩 35N·m</td>
-            <td><span class="badge badge-warn">注意</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-          <tr>
-            <td>2</td>
-            <td>粘贴防水密封条</td>
-            <td><span class="badge badge-warn">注意</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-          <tr>
-            <td>3</td>
-            <td>外观检查（无划痕）</td>
-            <td><span class="badge badge-check">标准</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-          <tr>
-            <td>4</td>
-            <td>确认数量 50个</td>
-            <td><span class="badge badge-ok">普通</span></td>
-            <td><span class="check-box"></span></td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="note-box">
-        ⚠️ <strong>重要注意事项：</strong>批次LT-2026-0613的防水处理工序已变更。与以往工序不同，请务必确认。
+
+      <div class="btn-row">
+        <button class="btn btn-ghost btn-sm" onclick="testConnection()">🔌 接続テスト</button>
+        <span class="status-badge testing" id="conn-status" style="display:none">—</span>
+      </div>
+
+      <hr>
+
+      <div class="card-title" style="margin-bottom:10px">✏️ 翻訳プロンプト</div>
+      <p style="font-size:12px;color:#78350f;margin-bottom:8px">
+        <span class="prompt-var">{text}</span> = 翻訳元テキスト
+        <span class="prompt-var">{lang}</span> = 翻訳先言語名
+      </p>
+      <textarea class="prompt-editor" id="prompt-template" rows="4">以下の日本語テキストを{lang}に翻訳してください。翻訳した文章のみを返してください。説明・注釈・原文は不要です。
+
+{text}</textarea>
+      <p class="note">※ モデルによって効果的なプロンプトが異なります。うまく翻訳されない場合は調整してください。</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="font-size:13px;color:#92400e">📦 Ollama のセットアップ方法</div>
+      <ol style="font-size:13px;line-height:2.2;color:#3b1209;padding-left:20px">
+        <li><b>Ollama をインストール</b>: <code style="background:#fde8d0;padding:2px 6px;border-radius:4px">https://ollama.com</code> からダウンロード</li>
+        <li><b>モデルをダウンロード</b>（ターミナルで）:<br>
+          <code style="background:#fde8d0;padding:2px 8px;border-radius:4px;font-size:12px">ollama pull llama3.2</code>　または　<code style="background:#fde8d0;padding:2px 8px;border-radius:4px;font-size:12px">ollama pull qwen2.5</code>
+        </li>
+        <li><b>Ollama を起動</b>: メニューバーのアイコンから起動、または <code style="background:#fde8d0;padding:2px 6px;border-radius:4px">ollama serve</code></li>
+        <li>上の「接続テスト」ボタンで確認 → 次へ進む</li>
+      </ol>
+      <p class="note" style="margin-top:8px">翻訳精度が高いおすすめモデル: <b>qwen2.5:7b</b>（中国語に強い）、<b>llama3.2:3b</b>（軽量・高速）、<b>gemma2:9b</b>（多言語）</p>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="goStep(1)">次へ：CSVをアップロード →</button>
+    </div>
+  </div>
+
+  <!-- STEP 1: アップロード -->
+  <div class="section" id="sec-1">
+    <div class="card">
+      <div class="card-title">📂 CSVファイルをアップロード</div>
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+        <div class="dz-icon">📋</div>
+        <div class="dz-main">ここにCSVをドラッグ＆ドロップ</div>
+        <div class="dz-sub">または クリックしてファイルを選択</div>
+      </div>
+      <input type="file" id="file-input" accept=".csv">
+      <p class="note" style="margin-top:10px">
+        FileMaker または Oracle から出力したCSVをそのまま読み込めます。文字コードは UTF-8 / Shift-JIS 自動判定。
+      </p>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="goStep(0)">← LLM設定に戻る</button>
+    </div>
+  </div>
+
+  <!-- STEP 2: 翻訳設定 -->
+  <div class="section" id="sec-2">
+    <div class="card">
+      <div class="card-title">📄 読み込んだファイル</div>
+      <div class="file-badge" id="file-name-badge">—</div>
+      <p class="note" style="margin-top:8px" id="file-info">—</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🌐 翻訳言語を選択（複数可）</div>
+      <div class="lang-grid">
+        <label class="lang-card selected" id="card-vi">
+          <span class="flag">🇻🇳</span>
+          <div><div class="lang-name">ベトナム語</div><div class="lang-sub">Tiếng Việt</div></div>
+          <input type="checkbox" value="ベトナム語" checked onchange="toggleLangCard(this)">
+        </label>
+        <label class="lang-card selected" id="card-zh">
+          <span class="flag">🇨🇳</span>
+          <div><div class="lang-name">中国語（簡体）</div><div class="lang-sub">简体中文</div></div>
+          <input type="checkbox" value="中国語（簡体字）" checked onchange="toggleLangCard(this)">
+        </label>
+        <label class="lang-card" id="card-zhtw">
+          <span class="flag">🇹🇼</span>
+          <div><div class="lang-name">中国語（繁体）</div><div class="lang-sub">繁體中文</div></div>
+          <input type="checkbox" value="中国語（繁体字）" onchange="toggleLangCard(this)">
+        </label>
+        <label class="lang-card" id="card-en">
+          <span class="flag">🇺🇸</span>
+          <div><div class="lang-name">英語</div><div class="lang-sub">English</div></div>
+          <input type="checkbox" value="英語" onchange="toggleLangCard(this)">
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🔤 翻訳する列を選択</div>
+      <div class="col-chips" id="col-chips"></div>
+      <p class="note" style="margin-top:10px">赤い列が翻訳対象です。品番・数量など翻訳不要な列は選択を外してください。</p>
+    </div>
+
+    <div class="card" style="border-color:#fde047;background:#fef9c3">
+      <div class="card-title" style="color:#92400e;font-size:13px">⚡ 速度について</div>
+      <p style="font-size:12px;color:#713f12;line-height:1.8">
+        ローカルLLMはセルごとにモデルを呼び出すため、Google翻訳より時間がかかります。<br>
+        目安: <b>llama3.2:3b</b> で 1セル約2〜5秒 / <b>qwen2.5:7b</b> で 1セル約5〜10秒。<br>
+        行数が多い場合は軽量モデルを推奨します。
+      </p>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="startTranslation()">▶ 翻訳を開始する</button>
+      <button class="btn btn-ghost" onclick="goStep(1)">← 戻る</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: 翻訳中 -->
+  <div class="section" id="sec-3">
+    <div class="card">
+      <div class="card-title">⏳ 翻訳しています...</div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="prog-bar"></div>
+      </div>
+      <div class="progress-label" id="prog-label">準備中...</div>
+      <hr>
+      <div class="log-box" id="log-box"></div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-ghost btn-sm" id="abort-btn" onclick="abortTranslation()">■ 中止する</button>
       </div>
     </div>
   </div>
+
+  <!-- STEP 4: 結果 -->
+  <div class="section" id="sec-4">
+    <div class="card">
+      <div class="card-title">✅ 翻訳が完了しました</div>
+      <div class="lang-tabs" id="result-tabs"></div>
+      <div class="result-table-wrap"><div id="result-table-area"></div></div>
+      <hr>
+      <div class="card-title" style="margin-top:0">📥 ダウンロード</div>
+      <div class="btn-row" id="download-btns"></div>
+      <hr>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="goStep(1)">🔄 別のCSVを処理する</button>
+        <button class="btn btn-ghost" onclick="goStep(0)">⚙ LLM設定を変更する</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
-function switchLang(lang) {
-  document.querySelectorAll('.lang-section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('sec-' + lang).classList.add('active');
-  document.querySelector('.tab.' + lang).classList.add('active');
+// ─── 状態 ────────────────────────────────────────
+let csvHeaders = [];
+let csvRows    = [];
+let fileName   = "";
+let results    = {};
+let abortFlag  = false;
+
+const LANG_LABELS = {
+  "ベトナム語":   "vi",
+  "中国語（簡体字）": "zh-cn",
+  "中国語（繁体字）": "zh-tw",
+  "英語":         "en",
+};
+
+// ─── ステップ制御 ─────────────────────────────────
+function goStep(n) {
+  [0,1,2,3,4].forEach(i => {
+    document.getElementById(`sec-${i}`).classList.toggle("visible", i === n);
+    const nav = document.getElementById(`nav-${i}`);
+    nav.classList.remove("active","done");
+    if (i === n) nav.classList.add("active");
+    else if (i < n) nav.classList.add("done");
+  });
+  window.scrollTo(0, 0);
+}
+
+// ─── API種別切替 ──────────────────────────────────
+function onApiTypeChange() {
+  const type = document.getElementById("api-type").value;
+  document.getElementById("api-url").value =
+    type === "openai" ? "http://localhost:1234" : "http://localhost:11434";
+}
+
+// ─── 接続テスト ───────────────────────────────────
+async function testConnection() {
+  const badge = document.getElementById("conn-status");
+  badge.style.display = "inline-flex";
+  badge.className = "status-badge testing";
+  badge.textContent = "接続中...";
+
+  const apiType = document.getElementById("api-type").value;
+  const url     = document.getElementById("api-url").value.replace(/\/$/, "");
+
+  try {
+    if (apiType === "ollama") {
+      const res  = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(5000) });
+      const data = await res.json();
+      const models = (data.models || []).map(m => m.name);
+      badge.className = "status-badge ok";
+      badge.textContent = `✓ 接続OK（${models.length}モデル）`;
+      renderModelList(models);
+    } else {
+      const res  = await fetch(`${url}/v1/models`, { signal: AbortSignal.timeout(5000) });
+      const data = await res.json();
+      const models = (data.data || []).map(m => m.id);
+      badge.className = "status-badge ok";
+      badge.textContent = `✓ 接続OK（${models.length}モデル）`;
+      renderModelList(models);
+    }
+  } catch (e) {
+    badge.className = "status-badge ng";
+    badge.textContent = "✗ 接続失敗 — Ollamaが起動しているか確認してください";
+  }
+}
+
+function renderModelList(models) {
+  const container = document.getElementById("model-list");
+  if (!models.length) {
+    container.innerHTML = '<span style="font-size:11px;color:#9ca3af">モデルが見つかりません</span>';
+    return;
+  }
+  container.innerHTML = '<span style="font-size:11px;color:#92400e;margin-right:6px">▼ クリックで選択：</span>';
+  models.forEach(name => {
+    const chip = document.createElement("span");
+    chip.className = "model-chip";
+    chip.textContent = name;
+    chip.onclick = () => {
+      document.getElementById("model-name").value = name;
+    };
+    container.appendChild(chip);
+  });
+}
+
+// ─── ファイルアップロード ─────────────────────────
+document.getElementById("file-input").addEventListener("change", e => {
+  if (e.target.files[0]) loadCSV(e.target.files[0]);
+});
+const dz = document.getElementById("dropzone");
+dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("dragover"); });
+dz.addEventListener("dragleave", () => dz.classList.remove("dragover"));
+dz.addEventListener("drop", e => {
+  e.preventDefault(); dz.classList.remove("dragover");
+  if (e.dataTransfer.files[0]) loadCSV(e.dataTransfer.files[0]);
+});
+
+function loadCSV(file) {
+  fileName = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    let text = e.target.result;
+    if (text.includes("")) { reloadAsShiftJIS(file); return; }
+    parseCSV(text);
+  };
+  reader.readAsText(file, "utf-8");
+}
+function reloadAsShiftJIS(file) {
+  const r = new FileReader();
+  r.onload = e => parseCSV(new TextDecoder("shift-jis").decode(e.target.result));
+  r.readAsArrayBuffer(file);
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) { alert("データが1行もありません。"); return; }
+  csvHeaders = parseLine(lines[0]);
+  csvRows    = lines.slice(1).filter(l => l.trim()).map(parseLine);
+
+  document.getElementById("file-name-badge").textContent = "📄 " + fileName;
+  document.getElementById("file-info").textContent =
+    `${csvHeaders.length} 列  ／  ${csvRows.length} 行を読み込みました`;
+
+  const chips = document.getElementById("col-chips");
+  chips.innerHTML = "";
+  csvHeaders.forEach((h, i) => {
+    const chip = document.createElement("div");
+    chip.className = "col-chip selected";
+    chip.textContent = h;
+    chip.dataset.idx = i;
+    chip.onclick = () => chip.classList.toggle("selected");
+    chips.appendChild(chip);
+  });
+
+  goStep(2);
+}
+
+function parseLine(line) {
+  const result = []; let cur = "", inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (c === "," && !inQ) { result.push(cur.trim()); cur = ""; }
+    else cur += c;
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function toggleLangCard(cb) {
+  cb.closest(".lang-card").classList.toggle("selected", cb.checked);
+}
+
+// ─── 翻訳開始 ────────────────────────────────────
+async function startTranslation() {
+  const selectedLangs = [...document.querySelectorAll(".lang-card input:checked")].map(c => c.value);
+  if (!selectedLangs.length) { alert("翻訳言語を1つ以上選択してください。"); return; }
+
+  const selectedCols = [...document.querySelectorAll(".col-chip.selected")].map(c => parseInt(c.dataset.idx));
+  if (!selectedCols.length) { alert("翻訳する列を1つ以上選択してください。"); return; }
+
+  results = {};
+  abortFlag = false;
+  document.getElementById("prog-bar").style.width = "0%";
+  document.getElementById("log-box").textContent = "";
+  goStep(3);
+
+  const total = selectedLangs.length * selectedCols.length * csvRows.length;
+  let done = 0;
+
+  for (const lang of selectedLangs) {
+    if (abortFlag) break;
+    log(`━━ ${lang} の翻訳を開始`);
+
+    const translatedRows = csvRows.map(r => [...r]);
+
+    for (const colIdx of selectedCols) {
+      if (abortFlag) break;
+      const colName = csvHeaders[colIdx];
+      log(`   列「${colName}」を翻訳中 ...`);
+
+      for (let ri = 0; ri < translatedRows.length; ri++) {
+        if (abortFlag) break;
+        const original = translatedRows[ri][colIdx] || "";
+        if (original.trim()) {
+          const translated = await llmTranslate(original, lang);
+          translatedRows[ri][colIdx] = translated;
+        }
+        done++;
+        const pct = Math.round(done / total * 100);
+        document.getElementById("prog-bar").style.width = pct + "%";
+        document.getElementById("prog-label").textContent =
+          `${done} / ${total} セル完了 (${pct}%)  ─  現在: ${lang} ／ ${colName} ／ ${ri+1}行目`;
+      }
+      log(`   ✓ 「${colName}」完了`);
+    }
+
+    if (!abortFlag) {
+      results[lang] = { headers: [...csvHeaders], rows: translatedRows };
+      log(`✅ ${lang} 完了`);
+    }
+  }
+
+  if (abortFlag) {
+    log("⚠ 中止されました");
+    if (Object.keys(results).length > 0) {
+      log("  翻訳済みの言語のみ結果を表示します");
+      buildResultUI(Object.keys(results));
+      goStep(4);
+    } else {
+      goStep(2);
+    }
+    return;
+  }
+
+  log("━━ すべての翻訳が完了しました");
+  buildResultUI(selectedLangs);
+  goStep(4);
+}
+
+function abortTranslation() {
+  abortFlag = true;
+  document.getElementById("abort-btn").disabled = true;
+  document.getElementById("abort-btn").textContent = "中止処理中...";
+}
+
+// ─── ローカルLLM翻訳 ──────────────────────────────
+async function llmTranslate(text, langName) {
+  const apiType = document.getElementById("api-type").value;
+  const url     = document.getElementById("api-url").value.replace(/\/$/, "");
+  const model   = document.getElementById("model-name").value.trim();
+  const promptTemplate = document.getElementById("prompt-template").value;
+  const prompt  = promptTemplate
+    .replace("{lang}", langName)
+    .replace("{text}", text);
+
+  try {
+    if (apiType === "ollama") {
+      const res = await fetch(`${url}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, prompt, stream: false }),
+      });
+      const data = await res.json();
+      return (data.response || text).trim();
+    } else {
+      // OpenAI互換
+      const res = await fetch(`${url}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.1,
+        }),
+      });
+      const data = await res.json();
+      return (data.choices?.[0]?.message?.content || text).trim();
+    }
+  } catch (e) {
+    log(`   ⚠ エラー（元のテキストを使用）: ${e.message}`);
+    return text;
+  }
+}
+
+function log(msg) {
+  const box = document.getElementById("log-box");
+  const ts  = new Date().toLocaleTimeString("ja-JP");
+  box.textContent += `[${ts}]  ${msg}\n`;
+  box.scrollTop = box.scrollHeight;
+}
+
+// ─── 結果UI ──────────────────────────────────────
+function buildResultUI(langs) {
+  const tabs = document.getElementById("result-tabs");
+  tabs.innerHTML = "";
+  langs.forEach((lang, i) => {
+    const tab = document.createElement("div");
+    tab.className = "lang-tab" + (i === 0 ? " active" : "");
+    tab.textContent = lang;
+    tab.dataset.lang = lang;
+    tab.onclick = () => switchTab(lang);
+    tabs.appendChild(tab);
+  });
+
+  const btns = document.getElementById("download-btns");
+  btns.innerHTML = "";
+  langs.forEach(lang => {
+    const b1 = document.createElement("button");
+    b1.className = "btn btn-green";
+    b1.innerHTML = `⬇ ${lang} CSV`;
+    b1.onclick = () => downloadCSV(lang);
+    btns.appendChild(b1);
+
+    const b2 = document.createElement("button");
+    b2.className = "btn btn-blue";
+    b2.innerHTML = `🖨 ${lang} チェックリスト`;
+    b2.onclick = () => printChecklist(lang);
+    btns.appendChild(b2);
+  });
+
+  switchTab(langs[0]);
+}
+
+function switchTab(lang) {
+  document.querySelectorAll(".lang-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.lang === lang));
+
+  const { headers, rows } = results[lang];
+  const thead = "<tr><th>No.</th>" + headers.map(h => `<th>${esc(h)}</th>`).join("") + "</tr>";
+  const tbody = rows.map((row, i) =>
+    `<tr><td style="color:#92400e;font-weight:700;text-align:center;width:36px">${i+1}</td>` +
+    row.map(c => `<td>${esc(c)}</td>`).join("") + "</tr>"
+  ).join("");
+  document.getElementById("result-table-area").innerHTML =
+    `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+}
+
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ─── CSVダウンロード ──────────────────────────────
+function downloadCSV(lang) {
+  const { headers, rows } = results[lang];
+  const lines = [headers, ...rows].map(row =>
+    row.map(c => `"${String(c ?? "").replace(/"/g,'""')}"`).join(",")
+  ).join("\r\n");
+  const blob = new Blob(["﻿" + lines], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName.replace(/\.csv$/i,"") + `_${LANG_LABELS[lang] || lang}.csv`;
+  a.click();
+}
+
+// ─── 印刷用HTMLチェックリスト ─────────────────────
+function printChecklist(lang) {
+  const { headers, rows } = results[lang];
+  const now = new Date().toLocaleString("ja-JP");
+  const thead = "<tr><th>No.</th>" + headers.map(h=>`<th>${esc(h)}</th>`).join("") + "<th>確認</th></tr>";
+  const tbody = rows.map((row,i) =>
+    `<tr><td class="num">${i+1}</td>` +
+    row.map(c=>`<td>${esc(c)}</td>`).join("") +
+    `<td class="chk"><input type="checkbox"></td></tr>`
+  ).join("");
+
+  const w = window.open("","_blank");
+  w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<title>チェックリスト — ${lang}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Hiragino Kaku Gothic ProN","Meiryo",sans-serif;background:#fdf8f0;padding:20px;color:#2c1810}
+.head{background:#b91c1c;color:#fff;padding:14px 20px;border-radius:8px 8px 0 0}
+.head h1{font-size:18px;letter-spacing:.08em}
+.head p{font-size:11px;opacity:.75;margin-top:3px}
+table{width:100%;border-collapse:collapse;background:#fff}
+thead th{background:#7f1d1d;color:#fff;padding:9px 11px;font-size:13px;text-align:left;white-space:nowrap}
+tbody td{padding:9px 11px;border-bottom:1px solid #f4c7b0;font-size:13px;vertical-align:top}
+tbody tr:hover td{background:#fdf3e7}
+.num{color:#92400e;font-weight:700;width:36px;text-align:center}
+.chk{width:44px;text-align:center}
+.chk input{width:18px;height:18px;accent-color:#b91c1c;cursor:pointer}
+.prog-wrap{display:flex;align-items:center;gap:10px;padding:10px 20px;background:#fff9f0;border-top:1px solid #f4c7b0}
+.pb{flex:1;height:7px;background:#fde8d0;border-radius:4px;overflow:hidden}
+.pb-fill{height:100%;background:#b91c1c;border-radius:4px;transition:width .3s;width:0}
+.pl{font-size:12px;color:#92400e;white-space:nowrap}
+.foot{padding:7px 20px;font-size:11px;color:#9ca3af;text-align:right;background:#fff9f0}
+@media print{.prog-wrap,.foot{display:none}body{background:#fff;padding:0}.head{border-radius:0}}
+</style></head><body>
+<div class="head"><h1>チェックリスト — ${lang}</h1><p>元ファイル: ${esc(fileName)} ／ 出力: ${now}</p></div>
+<table><thead>${thead}</thead><tbody id="tb">${tbody}</tbody></table>
+<div class="prog-wrap"><div class="pb"><div class="pb-fill" id="pb"></div></div><div class="pl" id="pl">0 / ${rows.length} 完了</div></div>
+<div class="foot">印刷: Ctrl+P / Cmd+P</div>
+<script>
+const total=${rows.length};
+function upd(){const c=document.querySelectorAll('input:checked').length;document.getElementById('pb').style.width=(c/total*100)+'%';document.getElementById('pl').textContent=c+' / '+total+' 完了';}
+document.getElementById('tb').addEventListener('change',upd);
+<\/script></body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 500);
 }
 </script>
 </body>
