@@ -87,9 +87,31 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
 .statusbar .dot.green{background:#22c55e}
 .statusbar .dot.blue{background:#3b82f6}
 
-/* ── プログレス ── */
+/* ── プログレス（細バー） ── */
 .prog-bar-wrap{height:3px;background:#e2e8f0;margin:0 10px 4px;border-radius:2px;overflow:hidden;flex-shrink:0}
-.prog-bar-fill{height:100%;background:#2563eb;border-radius:2px;transition:width .3s;width:0}
+.prog-bar-fill{height:100%;background:#2563eb;border-radius:2px;transition:width .2s;width:0}
+
+/* ── 進捗オーバーレイ ── */
+#prog-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:200;align-items:center;justify-content:center}
+#prog-overlay.show{display:flex}
+.prog-card{background:#1e293b;border-radius:16px;padding:32px 40px;width:520px;max-width:92vw;color:#fff;box-shadow:0 24px 80px rgba(0,0,0,.5)}
+.prog-card .pc-title{font-size:11px;font-weight:700;letter-spacing:.1em;color:#60a5fa;text-transform:uppercase;margin-bottom:6px}
+.prog-card .pc-file{font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prog-card .pc-bar-bg{background:#0f172a;border-radius:10px;height:22px;overflow:hidden;margin-bottom:10px;position:relative}
+.prog-card .pc-bar-fill{height:100%;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:10px;transition:width .25s ease;width:0;position:relative}
+.prog-card .pc-bar-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.15) 50%,transparent 100%);animation:shimmer 1.5s infinite}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}
+.prog-card .pc-stats{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px}
+.prog-card .pc-stat{background:#0f172a;border-radius:8px;padding:10px 12px}
+.prog-card .pc-stat-label{font-size:10px;color:#64748b;font-weight:700;letter-spacing:.06em;margin-bottom:4px}
+.prog-card .pc-stat-val{font-size:16px;font-weight:700;color:#f1f5f9}
+.prog-card .pc-stat-val.blue{color:#60a5fa}
+.prog-card .pc-stat-val.green{color:#4ade80}
+.prog-card .pc-stat-val.amber{color:#fbbf24}
+.prog-card .pc-item-bar{background:#0f172a;border-radius:8px;padding:10px 14px;font-size:12px;color:#94a3b8;margin-bottom:16px;min-height:36px;line-height:1.6}
+.prog-card .pc-item-bar b{color:#e2e8f0}
+.prog-card .pc-cancel{background:#dc2626;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s}
+.prog-card .pc-cancel:hover{background:#b91c1c}
 
 /* スクロール */
 ::-webkit-scrollbar{width:6px;height:6px}
@@ -197,6 +219,35 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
   <div class="s-item">対応形式: TXT / Excel (.xlsx .xls) / Word (.docx .doc)</div>
 </div>
 
+<!-- ── 進捗オーバーレイ ── -->
+<div id="prog-overlay">
+  <div class="prog-card">
+    <div class="pc-title">翻訳処理中</div>
+    <div class="pc-file" id="po-file">準備中...</div>
+    <div class="pc-bar-bg"><div class="pc-bar-fill" id="po-bar"></div></div>
+    <div class="pc-stats">
+      <div class="pc-stat">
+        <div class="pc-stat-label">進捗</div>
+        <div class="pc-stat-val blue" id="po-pct">0%</div>
+      </div>
+      <div class="pc-stat">
+        <div class="pc-stat-label">件数</div>
+        <div class="pc-stat-val" id="po-count">0 / 0</div>
+      </div>
+      <div class="pc-stat">
+        <div class="pc-stat-label">速度</div>
+        <div class="pc-stat-val green" id="po-speed">-</div>
+      </div>
+      <div class="pc-stat">
+        <div class="pc-stat-label">残り時間</div>
+        <div class="pc-stat-val amber" id="po-eta">-</div>
+      </div>
+    </div>
+    <div class="pc-item-bar" id="po-item">待機中...</div>
+    <button class="pc-cancel" onclick="cancelTranslation()">⏹ キャンセル</button>
+  </div>
+</div>
+
 <!-- ── 設定モーダル ── -->
 <div class="modal-overlay" id="modal">
   <div class="modal">
@@ -220,13 +271,47 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
 
 <script>
 // ── 状態 ──────────────────────────────────────────
-const inputFiles  = [];   // {file, id, ext, status}
-const outputFiles = [];   // {name, blob, lang}
-let translating   = false;
+const inputFiles  = [];
+const outputFiles = [];
+let translating      = false;
+let cancelRequested  = false;
 let stats = {total:0, done:0, err:0};
 let idSeq = 0;
 
-const LANGS = [];
+// ── 進捗トラッカー ────────────────────────────────
+const prog = {
+  total: 0, done: 0,
+  startTime: 0, lastDone: 0, lastTime: 0,
+  fileLabel: '',
+  update(done, total, itemLabel) {
+    this.done = done; this.total = total;
+    const now = Date.now();
+    const elapsed = (now - this.startTime) / 1000;
+    const speed   = elapsed > 0 ? done / elapsed : 0;
+    const remain  = speed > 0 && done < total ? (total - done) / speed : 0;
+    const pct     = total > 0 ? Math.round(done / total * 100) : 0;
+
+    document.getElementById('po-bar').style.width   = pct + '%';
+    document.getElementById('po-pct').textContent   = pct + '%';
+    document.getElementById('po-count').textContent = `${done} / ${total}`;
+    document.getElementById('po-speed').textContent = speed >= 1
+      ? `${speed.toFixed(1)} 件/秒` : `${(speed*60).toFixed(1)} 件/分`;
+    document.getElementById('po-eta').textContent = remain > 0
+      ? (remain >= 60 ? `${Math.ceil(remain/60)} 分` : `${Math.ceil(remain)} 秒`) : '-';
+    document.getElementById('po-file').textContent  = this.fileLabel;
+    if (itemLabel) document.getElementById('po-item').innerHTML = itemLabel;
+    // 細バーも同期
+    document.getElementById('prog-bar').style.width = pct + '%';
+  },
+  start(fileLabel) {
+    this.startTime = Date.now(); this.done = 0; this.fileLabel = fileLabel;
+    document.getElementById('prog-overlay').classList.add('show');
+  },
+  finish() {
+    document.getElementById('prog-overlay').classList.remove('show');
+    document.getElementById('prog-bar').style.width = '0';
+  }
+};
 
 // ── ファイル入力 ───────────────────────────────────
 document.getElementById('file-input').addEventListener('change', e => {
@@ -287,133 +372,188 @@ function setStatus(id, tag, text) {
 async function startTranslation() {
   if (translating) return;
   if (!inputFiles.length) { logMsg('INPUT にファイルがありません', 'warn'); return; }
-
   const langs = getLangs();
   if (!langs.length) { logMsg('言語を1つ以上選んでください', 'warn'); return; }
-
-  // OUTPUT初期化（今回分のみ追加）
   if (!outputFiles.length) clearOutputUI();
 
-  translating = true;
+  translating = true; cancelRequested = false;
   document.getElementById('translate-btn').disabled = true;
   document.getElementById('translate-btn').textContent = '⏳ 翻訳中...';
   setStatusBar(true);
 
-  const total = inputFiles.length * langs.length;
-  let done = 0;
-
   for (const item of inputFiles) {
+    if (cancelRequested) break;
     if (item.status === 'done') continue;
     setStatus(item.id, 'running', '⚡ 処理中');
     try {
       for (const {code, name} of langs) {
+        if (cancelRequested) break;
         logMsg(`━━ ${item.file.name} → ${name}`, 'sec');
         const blob = await translateFile(item, code, name);
         const outName = `${baseName(item.file.name)}_${code}.${item.ext}`;
         outputFiles.push({name: outName, blob, lang: name});
         addOutputItem({name: outName, blob, lang: name});
-        done++;
-        setProgress(done / total * 100);
-        stats.done++;
-        updateStats(); updateOutCount();
+        stats.done++; updateStats(); updateOutCount();
       }
-      item.status = 'done';
-      setStatus(item.id, 'done', '✅ 完了');
+      if (!cancelRequested) {
+        item.status = 'done';
+        setStatus(item.id, 'done', '✅ 完了');
+      }
     } catch(e) {
       item.status = 'error';
       setStatus(item.id, 'error', '❌ エラー');
       logMsg(`❌ ${item.file.name}: ${e.message}`, 'err');
-      stats.err++;
-      updateStats();
+      stats.err++; updateStats();
     }
   }
 
-  logMsg('━━ 全処理完了', 'ok');
-  translating = false;
+  prog.finish();
+  logMsg(cancelRequested ? '━━ キャンセルしました' : '━━ 全処理完了', cancelRequested ? 'warn' : 'ok');
+  translating = false; cancelRequested = false;
   document.getElementById('translate-btn').disabled = false;
   document.getElementById('translate-btn').textContent = '▶  翻訳開始';
   setStatusBar(false);
-  setProgress(0);
 }
+
+function cancelTranslation() { cancelRequested = true; }
 
 // ── ファイル翻訳ディスパッチ ──────────────────────
 async function translateFile(item, langCode, langName) {
-  const ab = await item.file.arrayBuffer();
+  const ab  = await item.file.arrayBuffer();
   const ext = item.ext.toLowerCase();
-  if (ext === 'txt')              return await trTxt(ab, langCode, langName);
-  if (ext === 'xlsx' || ext === 'xls') return await trExcel(ab, langCode, langName, ext);
-  if (ext === 'docx' || ext === 'doc') return await trWord(ab, langCode, langName);
+  const label = `${item.file.name}  →  ${langName}`;
+  prog.start(label);
+  if (ext === 'txt')                   return await trTxt(ab, langCode, langName, label);
+  if (ext === 'xlsx' || ext === 'xls') return await trExcel(ab, langCode, langName, ext, label);
+  if (ext === 'docx' || ext === 'doc') return await trWord(ab, langCode, langName, label);
   throw new Error('非対応形式');
 }
 
+// ── バッチ翻訳コア（Google・30件まとめて送信）────
+// テキスト配列を受け取り翻訳済み配列を返す
+async function batchTranslate(texts, lc, ln, onProgress) {
+  const engine = document.getElementById('engine-sel').value;
+  if (engine !== 'google') {
+    // LLMは1件ずつ
+    const out = [];
+    for (let i = 0; i < texts.length; i++) {
+      if (cancelRequested) break;
+      out.push(await trLLM(texts[i], ln));
+      onProgress(i + 1, texts.length, texts[i]);
+    }
+    return out;
+  }
+
+  const BATCH = 30;   // 1リクエストあたりの件数
+  const PARA  = 3;    // 並列リクエスト数
+  const results = new Array(texts.length).fill('');
+  let done = 0;
+
+  // バッチに分割
+  const batches = [];
+  for (let i = 0; i < texts.length; i += BATCH) {
+    batches.push({texts: texts.slice(i, i + BATCH), start: i});
+  }
+
+  // PARA 個ずつ並列処理
+  for (let bi = 0; bi < batches.length; bi += PARA) {
+    if (cancelRequested) break;
+    const chunk = batches.slice(bi, bi + PARA);
+    await Promise.all(chunk.map(async ({texts: bt, start}) => {
+      const joined = bt.join('\n');
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=${lc}&dt=t&q=${encodeURIComponent(joined)}`;
+      try {
+        const res  = await fetch(url);
+        const data = await res.json();
+        const raw  = data[0].map(x => x[0]).join('');
+        const parts = raw.split('\n');
+        bt.forEach((_, i) => { results[start + i] = parts[i] ?? bt[i]; });
+      } catch {
+        bt.forEach((t, i) => { results[start + i] = t; });
+      }
+      done += bt.length;
+      onProgress(done, texts.length, bt[bt.length - 1]);
+    }));
+  }
+  return results;
+}
+
 // ── TXT翻訳 ──────────────────────────────────────
-async function trTxt(ab, lc, ln) {
+async function trTxt(ab, lc, ln, label) {
   const text  = new TextDecoder('utf-8').decode(ab).replace(/﻿/,'');
   const lines = text.split(/\r?\n/);
-  logMsg(`   ${lines.length} 行`, 'info');
-  const out = [];
-  for (const line of lines) {
-    out.push(line.trim() ? await tr(line, lc, ln) : '');
-  }
+  const nonEmpty = lines.map((l, i) => ({i, l, isBlank: !l.trim()}));
+  const targets  = nonEmpty.filter(x => !x.isBlank).map(x => x.l);
+  logMsg(`   ${lines.length} 行 / 翻訳対象: ${targets.length} 行`, 'info');
+
+  prog.update(0, targets.length, `<b>${label}</b> — ${targets.length} 行を一括翻訳`);
+  const translated = await batchTranslate(targets, lc, ln,
+    (d, t, last) => prog.update(d, t, `<b>${label}</b><br>行 ${d}/${t}：${esc(last?.slice(0,40) ?? '')}`));
+
+  let ti = 0;
+  const out = lines.map(l => l.trim() ? (translated[ti++] ?? l) : '');
   return new Blob(['﻿' + out.join('\r\n')], {type:'text/plain;charset=utf-8'});
 }
 
 // ── Excel翻訳 ─────────────────────────────────────
-async function trExcel(ab, lc, ln, ext) {
+async function trExcel(ab, lc, ln, ext, label) {
   const wb = XLSX.read(ab, {type:'array'});
-  let cnt = 0;
+  // 対象セルを全シートから収集
+  const targets = [];   // {sn, ref, orig}
   for (const sn of wb.SheetNames) {
     const ws = wb.Sheets[sn];
     for (const ref in ws) {
       if (ref.startsWith('!')) continue;
       const cell = ws[ref];
-      if (cell.t === 's' && cell.v && cell.v.trim()) {
-        cell.v = await tr(cell.v, lc, ln);
-        cell.w = cell.v;
-        cnt++;
-      }
+      if (cell.t === 's' && cell.v && cell.v.trim())
+        targets.push({sn, ref, orig: cell.v});
     }
   }
-  logMsg(`   ${cnt} セル翻訳`, 'info');
+  logMsg(`   ${targets.length} セル翻訳`, 'info');
+  prog.update(0, targets.length, `<b>${label}</b> — ${targets.length} セルを一括翻訳`);
+
+  const texts      = targets.map(x => x.orig);
+  const translated = await batchTranslate(texts, lc, ln,
+    (d, t, last) => prog.update(d, t, `<b>${label}</b><br>セル ${d}/${t}：${esc(last?.slice(0,40) ?? '')}`));
+
+  targets.forEach(({sn, ref, orig}, i) => {
+    const cell = wb.Sheets[sn][ref];
+    cell.v = translated[i] ?? orig;
+    cell.w = cell.v;
+  });
   const out = XLSX.write(wb, {bookType: ext === 'xls' ? 'xls' : 'xlsx', type:'array'});
   return new Blob([out], {type:'application/octet-stream'});
 }
 
 // ── Word翻訳（JSZip + XML）────────────────────────
-async function trWord(ab, lc, ln) {
+async function trWord(ab, lc, ln, label) {
   const zip     = await JSZip.loadAsync(ab);
   const xmlFile = zip.file('word/document.xml');
   if (!xmlFile) throw new Error('document.xml が見つかりません');
   let xml = await xmlFile.async('string');
 
-  // <w:t> タグのテキストを抽出して翻訳
   const pattern = /(<w:t(?:[^>]*)>)([^<]*)(<\/w:t>)/g;
   const matches = [...xml.matchAll(pattern)].filter(m => m[2].trim());
-  logMsg(`   ${matches.length} テキスト要素`, 'info');
 
-  // 重複排除して翻訳
-  const cache = new Map();
-  for (const m of matches) {
-    const orig = m[2];
-    if (!cache.has(orig)) cache.set(orig, await tr(orig, lc, ln));
-  }
+  // 重複排除
+  const uniq = [...new Set(matches.map(m => m[2]))];
+  logMsg(`   ${matches.length} 要素 / ユニーク: ${uniq.length}`, 'info');
+  prog.update(0, uniq.length, `<b>${label}</b> — ${uniq.length} テキスト要素を一括翻訳`);
+
+  const translated = await batchTranslate(uniq, lc, ln,
+    (d, t, last) => prog.update(d, t, `<b>${label}</b><br>要素 ${d}/${t}：${esc(last?.slice(0,40) ?? '')}`));
+
+  const cache = new Map(uniq.map((orig, i) => [orig, translated[i]]));
   xml = xml.replace(pattern, (_, open, text, close) => {
     const t = cache.get(text);
     return t ? `${open}${escXml(t)}${close}` : `${open}${text}${close}`;
   });
 
   zip.file('word/document.xml', xml);
-  const blob = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
-  return blob;
+  return zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
 }
 
-// ── 翻訳エンジン ──────────────────────────────────
-async function tr(text, lc, ln) {
-  const engine = document.getElementById('engine-sel').value;
-  if (engine === 'google') return await trGoogle(text, lc);
-  return await trLLM(text, ln);
-}
-
+// ── 翻訳エンジン（単体）──────────────────────────
 async function trGoogle(text, lc) {
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=${lc}&dt=t&q=${encodeURIComponent(text)}`;
@@ -421,6 +561,12 @@ async function trGoogle(text, lc) {
     const data = await res.json();
     return data[0].map(x => x[0]).join('');
   } catch { return text; }
+}
+
+async function tr(text, lc, ln) {
+  const engine = document.getElementById('engine-sel').value;
+  if (engine === 'google') return await trGoogle(text, lc);
+  return await trLLM(text, ln);
 }
 
 async function trLLM(text, ln) {
@@ -550,7 +696,6 @@ function updateStats() {
 }
 function updateInCount()  { document.getElementById('in-count').textContent  = `${inputFiles.length} ファイル`; }
 function updateOutCount() { document.getElementById('out-count').textContent = `${outputFiles.length} ファイル`; }
-function setProgress(pct) { document.getElementById('prog-bar').style.width = pct + '%'; }
 function setStatusBar(running) {
   document.getElementById('status-dot').className  = 'dot ' + (running ? 'blue' : '');
   document.getElementById('status-text').textContent = running ? '翻訳中...' : '待機中';
