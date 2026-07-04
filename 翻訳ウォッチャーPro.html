@@ -6,6 +6,7 @@
 <title>翻訳ウォッチャー Pro</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<!-- PDF.jsは使用時に動的ロード -->
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;background:#eef0f4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -172,9 +173,9 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
     <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
       <div class="dz-icon">📂</div>
       <div class="dz-main">ここにファイルをドラッグ＆ドロップ</div>
-      <div class="dz-sub">または クリックして選択　|　対応形式: TXT・Excel・Word</div>
+      <div class="dz-sub">または クリックして選択　|　対応形式: TXT・Excel・Word・PDF</div>
     </div>
-    <input type="file" id="file-input" multiple accept=".txt,.xlsx,.xls,.docx,.doc">
+    <input type="file" id="file-input" multiple accept=".txt,.xlsx,.xls,.docx,.doc,.pdf">
     <div class="prog-bar-wrap"><div class="prog-bar-fill" id="prog-bar"></div></div>
     <div class="file-list" id="input-list"></div>
   </div>
@@ -216,7 +217,7 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
 <div class="statusbar">
   <div class="s-item"><div class="dot" id="status-dot"></div><span id="status-text">待機中</span></div>
   <div class="s-item">エンジン: <span id="sb-engine">Google翻訳</span></div>
-  <div class="s-item">対応形式: TXT / Excel (.xlsx .xls) / Word (.docx .doc)</div>
+  <div class="s-item">対応形式: TXT / Excel (.xlsx .xls) / Word (.docx .doc) / PDF (.pdf)</div>
 </div>
 
 <!-- ── 進捗オーバーレイ ── -->
@@ -327,7 +328,7 @@ dz.addEventListener('drop', e => {
 });
 
 function addFiles(files) {
-  const allowed = ['txt','xlsx','xls','docx','doc'];
+  const allowed = ['txt','xlsx','xls','docx','doc','pdf'];
   for (const f of files) {
     const ext = f.name.split('.').pop().toLowerCase();
     if (!allowed.includes(ext)) { logMsg(`⚠ 非対応: ${f.name}`, 'warn'); continue; }
@@ -389,8 +390,8 @@ async function startTranslation() {
       for (const {code, name} of langs) {
         if (cancelRequested) break;
         logMsg(`━━ ${item.file.name} → ${name}`, 'sec');
-        const blob = await translateFile(item, code, name);
-        const outName = `${baseName(item.file.name)}_${code}.${item.ext}`;
+        const {blob, outExt} = await translateFile(item, code, name);
+        const outName = `${baseName(item.file.name)}_${code}.${outExt}`;
         outputFiles.push({name: outName, blob, lang: name});
         addOutputItem({name: outName, blob, lang: name});
         stats.done++; updateStats(); updateOutCount();
@@ -423,9 +424,10 @@ async function translateFile(item, langCode, langName) {
   const ext = item.ext.toLowerCase();
   const label = `${item.file.name}  →  ${langName}`;
   prog.start(label);
-  if (ext === 'txt')                   return await trTxt(ab, langCode, langName, label);
-  if (ext === 'xlsx' || ext === 'xls') return await trExcel(ab, langCode, langName, ext, label);
-  if (ext === 'docx' || ext === 'doc') return await trWord(ab, langCode, langName, label);
+  if (ext === 'txt')                   return {blob: await trTxt(ab, langCode, langName, label),   outExt: 'txt'};
+  if (ext === 'xlsx' || ext === 'xls') return {blob: await trExcel(ab, langCode, langName, ext, label), outExt: ext};
+  if (ext === 'docx' || ext === 'doc') return {blob: await trWord(ab, langCode, langName, label),  outExt: ext};
+  if (ext === 'pdf')                   return {blob: await trPdf(ab, langCode, langName, label),   outExt: 'html'};
   throw new Error('非対応形式');
 }
 
@@ -493,7 +495,7 @@ async function trTxt(ab, lc, ln, label) {
   let ti = 0;
   const out = lines.map(l => l.trim() ? (translated[ti++] ?? l) : '');
   return new Blob(['﻿' + out.join('\r\n')], {type:'text/plain;charset=utf-8'});
-}
+}  // ← trTxt はブロブを直接返す（translateFile側で outExt:'txt' を付与）
 
 // ── Excel翻訳 ─────────────────────────────────────
 async function trExcel(ab, lc, ln, ext, label) {
@@ -551,6 +553,117 @@ async function trWord(ab, lc, ln, label) {
 
   zip.file('word/document.xml', xml);
   return zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+}
+
+// ── PDF翻訳（PDF.js + 対訳HTML出力）────────────────
+const PDFJS_BASE = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/';
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function trPdf(ab, lc, ln, label) {
+  // PDF.js を初回のみ動的ロード
+  if (!window.pdfjsLib) {
+    logMsg('PDF.js を読み込み中...', 'info');
+    await loadScript(PDFJS_BASE + 'pdf.min.js');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js';
+  }
+
+  const pdf = await pdfjsLib.getDocument({data: new Uint8Array(ab)}).promise;
+  const numPages = pdf.numPages;
+  logMsg(`   ${numPages} ページ`, 'info');
+
+  // ── ページごとにテキスト抽出 ──
+  const pageTexts = [];
+  for (let p = 1; p <= numPages; p++) {
+    const page    = await pdf.getPage(p);
+    const content = await page.getTextContent();
+
+    // Y座標でグループ化して行を復元（PDF座標は下から上）
+    const rows = new Map();
+    for (const item of content.items) {
+      if (!item.str.trim()) continue;
+      const y = Math.round(item.transform[5]);
+      if (!rows.has(y)) rows.set(y, []);
+      rows.get(y).push({x: item.transform[4], str: item.str});
+    }
+    const lines = [...rows.entries()]
+      .sort((a, b) => b[0] - a[0])          // Y降順（上→下）
+      .map(([, items]) =>
+        items.sort((a, b) => a.x - b.x).map(i => i.str).join(''));
+    pageTexts.push(lines.join('\n'));
+  }
+
+  const hasText = pageTexts.some(t => t.trim());
+  if (!hasText) throw new Error('テキストが抽出できません（スキャンPDF・画像PDFは非対応）');
+
+  // ── ページ単位でバッチ翻訳 ──
+  const translatedPages = [];
+  for (let i = 0; i < pageTexts.length; i++) {
+    if (cancelRequested) break;
+    const pageLines = pageTexts[i].split('\n').filter(l => l.trim());
+    if (!pageLines.length) { translatedPages.push(''); continue; }
+
+    prog.update(i, numPages, `<b>${label}</b><br>ページ ${i+1}/${numPages} を翻訳中`);
+    const tl = await batchTranslate(
+      pageLines, lc, ln,
+      (d, t) => prog.update(i + d/t, numPages,
+        `<b>${label}</b><br>ページ ${i+1}/${numPages} — 行 ${d}/${t}`)
+    );
+    translatedPages.push(tl.join('\n'));
+  }
+
+  return new Blob([buildPdfHtml(pageTexts, translatedPages, label, ln, numPages)],
+    {type: 'text/html;charset=utf-8'});
+}
+
+function buildPdfHtml(origPages, transPages, label, langName, numPages) {
+  const pages = origPages.map((orig, i) => `
+  <div class="page">
+    <div class="ph">ページ ${i + 1} / ${numPages}</div>
+    <div class="grid">
+      <div class="col">
+        <div class="clabel">🇯🇵 日本語（原文）</div>
+        <div class="body">${esc(orig).replace(/\n/g,'<br>')}</div>
+      </div>
+      <div class="col">
+        <div class="clabel">🌐 ${esc(langName)}</div>
+        <div class="body">${esc(transPages[i]||'').replace(/\n/g,'<br>')}</div>
+      </div>
+    </div>
+  </div>`).join('');
+
+  return `<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<title>${esc(label)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;background:#f0f2f5;padding:16px}
+.toolbar{background:#1a1a2e;color:#fff;padding:12px 20px;border-radius:8px;margin-bottom:16px;display:flex;align-items:center;gap:16px}
+.toolbar strong{font-size:15px}.toolbar span{font-size:12px;opacity:.7;flex:1}
+.print-btn{background:#16a34a;color:#fff;border:none;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700}
+.page{background:#fff;border-radius:8px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.ph{background:#1e3a5f;color:#fff;padding:6px 16px;font-size:11px;font-weight:700;letter-spacing:.04em}
+.grid{display:grid;grid-template-columns:1fr 1fr}
+.col{padding:14px 16px;border-right:1px solid #e2e8f0}
+.col:last-child{border-right:none}
+.clabel{font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:6px;letter-spacing:.06em}
+.body{font-size:13px;line-height:1.9;color:#1e293b}
+@media print{.toolbar{display:none}body{background:#fff;padding:0}.page{box-shadow:none;border:1px solid #ddd;margin-bottom:8px}.grid{grid-template-columns:1fr 1fr}}
+</style></head><body>
+<div class="toolbar">
+  <strong>📄 翻訳ウォッチャー Pro</strong>
+  <span>${esc(label)}</span>
+  <button class="print-btn" onclick="window.print()">🖨 印刷</button>
+</div>
+${pages}
+</body></html>`;
 }
 
 // ── 翻訳エンジン（単体）──────────────────────────
@@ -711,7 +824,7 @@ function getLangs() {
   return l;
 }
 function fileIcon(ext) {
-  return {txt:'📄',xlsx:'📊',xls:'📊',docx:'📝',doc:'📝'}[ext.toLowerCase()] || '📁';
+  return {txt:'📄',xlsx:'📊',xls:'📊',docx:'📝',doc:'📝',pdf:'📕',html:'🌐'}[ext.toLowerCase()] || '📁';
 }
 function formatSize(n) {
   if (n < 1024) return n + ' B';
@@ -725,7 +838,7 @@ function escXml(s)      { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 
 // 起動ログ
 logMsg('翻訳ウォッチャー Pro 起動', 'sec');
-logMsg('対応形式: TXT / Excel (.xlsx .xls) / Word (.docx .doc)', 'info');
+logMsg('対応形式: TXT / Excel (.xlsx .xls) / Word (.docx .doc) / PDF (.pdf)', 'info');
 logMsg('ファイルをINPUTフォルダにドラッグして「翻訳開始」を押してください', 'ok');
 </script>
 </body>
