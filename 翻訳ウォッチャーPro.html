@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>翻訳ウォッチャー Pro</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;background:#eef0f4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── ツールバー ── */
+.toolbar{background:#1a1a2e;color:#fff;display:flex;align-items:center;gap:8px;padding:0 16px;height:52px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.app-logo{font-size:18px;font-weight:700;letter-spacing:.06em;color:#fff;margin-right:8px;white-space:nowrap}
+.app-logo span{color:#60a5fa;font-size:12px;font-weight:400;margin-left:6px;opacity:.8}
+.tb-sep{width:1px;height:28px;background:#444;margin:0 4px}
+.tb-label{font-size:12px;color:#aaa;white-space:nowrap}
+.tb-select{background:#2d2d4e;color:#fff;border:1px solid #444;border-radius:5px;padding:5px 10px;font-size:12px;cursor:pointer;outline:none}
+.tb-btn{background:#2563eb;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s}
+.tb-btn:hover{background:#1d4ed8}
+.tb-btn:disabled{background:#444;cursor:not-allowed}
+.tb-btn.green{background:#16a34a}.tb-btn.green:hover{background:#15803d}
+.tb-btn.gray{background:#4b5563}.tb-btn.gray:hover{background:#374151}
+.tb-btn.red{background:#dc2626}.tb-btn.red:hover{background:#b91c1c}
+.spacer{flex:1}
+.stat-chip{background:#2d2d4e;border-radius:6px;padding:4px 12px;font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:6px}
+.stat-chip b{color:#fff;font-size:14px}
+
+/* ── メイン ── */
+.workspace{display:flex;flex:1;gap:10px;padding:10px;overflow:hidden}
+
+/* ── フォルダパネル ── */
+.folder-panel{background:#fff;border-radius:10px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.folder-panel.input-panel{flex:1}
+.folder-panel.output-panel{flex:1}
+
+.folder-header{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#1e3a5f;color:#fff;font-size:13px;font-weight:700;letter-spacing:.04em;flex-shrink:0}
+.folder-header .folder-title{flex:1}
+.folder-header .folder-count{font-size:11px;background:rgba(255,255,255,.2);border-radius:20px;padding:2px 10px}
+
+.dropzone{border:2px dashed #94a3b8;border-radius:8px;margin:10px;padding:28px 12px;text-align:center;cursor:pointer;transition:all .15s;background:#f8fafc;flex-shrink:0}
+.dropzone.drag{border-color:#2563eb;background:#eff6ff}
+.dropzone:hover{border-color:#2563eb;background:#f0f7ff}
+.dropzone .dz-icon{font-size:36px;margin-bottom:6px}
+.dropzone .dz-main{font-size:14px;font-weight:700;color:#1e3a5f}
+.dropzone .dz-sub{font-size:11px;color:#94a3b8;margin-top:4px}
+#file-input{display:none}
+
+.file-list{flex:1;overflow-y:auto;padding:0 10px 10px}
+
+.file-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;background:#fff;transition:background .1s}
+.file-item:hover{background:#f8fafc}
+.file-icon{font-size:22px;flex-shrink:0}
+.file-info{flex:1;min-width:0}
+.file-name{font-size:13px;font-weight:600;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-meta{font-size:11px;color:#94a3b8;margin-top:2px}
+.file-status{flex-shrink:0}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.badge.waiting  {background:#f1f5f9;color:#64748b}
+.badge.running  {background:#eff6ff;color:#2563eb}
+.badge.done     {background:#f0fdf4;color:#16a34a}
+.badge.error    {background:#fff1f2;color:#dc2626}
+.file-remove{background:none;border:none;color:#cbd5e1;font-size:16px;cursor:pointer;padding:2px 4px;border-radius:4px;flex-shrink:0}
+.file-remove:hover{color:#dc2626;background:#fff1f2}
+
+/* 出力側 */
+.dl-btn{background:#2563eb;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0}
+.dl-btn:hover{background:#1d4ed8}
+.output-actions{padding:8px 10px;display:flex;gap:8px;border-top:1px solid #e2e8f0;flex-shrink:0}
+
+/* ── ログパネル ── */
+.log-wrap{height:160px;background:#0f172a;display:flex;flex-direction:column;flex-shrink:0}
+.log-header{padding:6px 14px;background:#1e293b;color:#94a3b8;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}
+.log-body{flex:1;overflow-y:auto;padding:6px 14px;font-family:"Courier New",monospace;font-size:12px;line-height:1.8}
+.log-body .ts{color:#475569}
+.log-body .ok{color:#86efac}
+.log-body .warn{color:#fde047}
+.log-body .err{color:#fca5a5}
+.log-body .sec{color:#67e8f9}
+.log-body .info{color:#94a3b8}
+
+/* ── ステータスバー ── */
+.statusbar{background:#1a1a2e;color:#64748b;font-size:11px;padding:4px 16px;display:flex;gap:16px;flex-shrink:0}
+.statusbar .s-item{display:flex;align-items:center;gap:5px}
+.statusbar .dot{width:7px;height:7px;border-radius:50%;background:#475569}
+.statusbar .dot.green{background:#22c55e}
+.statusbar .dot.blue{background:#3b82f6}
+
+/* ── プログレス ── */
+.prog-bar-wrap{height:3px;background:#e2e8f0;margin:0 10px 4px;border-radius:2px;overflow:hidden;flex-shrink:0}
+.prog-bar-fill{height:100%;background:#2563eb;border-radius:2px;transition:width .3s;width:0}
+
+/* スクロール */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#f1f5f9}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+
+/* 設定モーダル */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:12px;width:440px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h2{font-size:16px;font-weight:700;color:#1e293b;margin-bottom:16px}
+.modal label{display:block;font-size:12px;color:#64748b;margin:10px 0 4px;font-weight:600}
+.modal input,.modal select{width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none}
+.modal input:focus,.modal select:focus{border-color:#2563eb}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+</style>
+</head>
+<body>
+
+<!-- ── ツールバー ── -->
+<div class="toolbar">
+  <div class="app-logo">翻訳ウォッチャー <span>Pro</span></div>
+  <div class="tb-sep"></div>
+  <span class="tb-label">翻訳エンジン</span>
+  <select class="tb-select" id="engine-sel">
+    <option value="google">🌐 Google翻訳</option>
+    <option value="llm">🤖 LLM（Ollama）</option>
+  </select>
+  <div class="tb-sep"></div>
+  <span class="tb-label">言語</span>
+  <label style="color:#fff;font-size:12px;display:flex;align-items:center;gap:4px">
+    <input type="checkbox" id="lang-vi" checked> ベトナム語
+  </label>
+  <label style="color:#fff;font-size:12px;display:flex;align-items:center;gap:4px">
+    <input type="checkbox" id="lang-zh" checked> 中国語
+  </label>
+  <div class="tb-sep"></div>
+  <button class="tb-btn green" id="translate-btn" onclick="startTranslation()">▶  翻訳開始</button>
+  <button class="tb-btn" onclick="clearAll()">🗑  クリア</button>
+  <button class="tb-btn gray" onclick="downloadAll()">⬇  全ダウンロード (ZIP)</button>
+  <button class="tb-btn gray" onclick="openSettings()">⚙  設定</button>
+  <div class="spacer"></div>
+  <div class="stat-chip">合計 <b id="st-total">0</b></div>
+  <div class="stat-chip" style="color:#86efac">完了 <b id="st-done">0</b></div>
+  <div class="stat-chip" style="color:#fca5a5">エラー <b id="st-err">0</b></div>
+</div>
+
+<!-- ── ワークスペース ── -->
+<div class="workspace">
+
+  <!-- INPUT フォルダ -->
+  <div class="folder-panel input-panel">
+    <div class="folder-header">
+      <span>📥</span>
+      <span class="folder-title">INPUT フォルダ</span>
+      <span class="folder-count" id="in-count">0 ファイル</span>
+    </div>
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+      <div class="dz-icon">📂</div>
+      <div class="dz-main">ここにファイルをドラッグ＆ドロップ</div>
+      <div class="dz-sub">または クリックして選択　|　対応形式: TXT・Excel・Word</div>
+    </div>
+    <input type="file" id="file-input" multiple accept=".txt,.xlsx,.xls,.docx,.doc">
+    <div class="prog-bar-wrap"><div class="prog-bar-fill" id="prog-bar"></div></div>
+    <div class="file-list" id="input-list"></div>
+  </div>
+
+  <!-- 矢印 -->
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;color:#94a3b8;font-size:28px;flex-shrink:0;gap:8px">
+    <span>→</span>
+    <span style="font-size:11px;writing-mode:vertical-rl">翻訳</span>
+  </div>
+
+  <!-- OUTPUT フォルダ -->
+  <div class="folder-panel output-panel">
+    <div class="folder-header" style="background:#14532d">
+      <span>📤</span>
+      <span class="folder-title">OUTPUT フォルダ</span>
+      <span class="folder-count" id="out-count">0 ファイル</span>
+    </div>
+    <div class="file-list" id="output-list" style="padding-top:10px">
+      <div style="text-align:center;color:#94a3b8;font-size:13px;padding:40px 0">
+        翻訳後のファイルがここに表示されます
+      </div>
+    </div>
+    <div class="output-actions">
+      <button class="tb-btn green" style="font-size:12px;padding:6px 14px" onclick="downloadAll()">⬇ 全てZIPでダウンロード</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ログ ── -->
+<div class="log-wrap">
+  <div class="log-header">
+    <span>📋</span> 処理ログ
+    <button onclick="clearLog()" style="margin-left:auto;background:none;border:none;color:#64748b;cursor:pointer;font-size:11px">クリア</button>
+  </div>
+  <div class="log-body" id="log-body"></div>
+</div>
+
+<!-- ── ステータスバー ── -->
+<div class="statusbar">
+  <div class="s-item"><div class="dot" id="status-dot"></div><span id="status-text">待機中</span></div>
+  <div class="s-item">エンジン: <span id="sb-engine">Google翻訳</span></div>
+  <div class="s-item">対応形式: TXT / Excel (.xlsx .xls) / Word (.docx .doc)</div>
+</div>
+
+<!-- ── 設定モーダル ── -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h2>⚙ LLM設定（Ollama）</h2>
+    <label>API種別</label>
+    <select id="llm-api">
+      <option value="ollama">Ollama（標準）</option>
+      <option value="openai">OpenAI互換（LM Studio等）</option>
+    </select>
+    <label>エンドポイントURL</label>
+    <input type="text" id="llm-url" value="http://localhost:11434">
+    <label>モデル名</label>
+    <input type="text" id="llm-model" value="llama3.2">
+    <div class="modal-btns">
+      <button class="tb-btn gray" onclick="closeSettings()">キャンセル</button>
+      <button class="tb-btn" onclick="testLLM()">接続テスト</button>
+      <button class="tb-btn green" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 状態 ──────────────────────────────────────────
+const inputFiles  = [];   // {file, id, ext, status}
+const outputFiles = [];   // {name, blob, lang}
+let translating   = false;
+let stats = {total:0, done:0, err:0};
+let idSeq = 0;
+
+const LANGS = [];
+
+// ── ファイル入力 ───────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  addFiles([...e.target.files]);
+  e.target.value = '';
+});
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  addFiles([...e.dataTransfer.files]);
+});
+
+function addFiles(files) {
+  const allowed = ['txt','xlsx','xls','docx','doc'];
+  for (const f of files) {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!allowed.includes(ext)) { logMsg(`⚠ 非対応: ${f.name}`, 'warn'); continue; }
+    const id = ++idSeq;
+    inputFiles.push({file:f, id, ext, status:'waiting'});
+    renderInputItem({file:f, id, ext, status:'waiting'});
+    stats.total++;
+  }
+  updateStats();
+  updateInCount();
+}
+
+function renderInputItem(item) {
+  const el = document.createElement('div');
+  el.className = 'file-item'; el.id = `in-${item.id}`;
+  el.innerHTML = `
+    <div class="file-icon">${fileIcon(item.ext)}</div>
+    <div class="file-info">
+      <div class="file-name">${esc(item.file.name)}</div>
+      <div class="file-meta">${formatSize(item.file.size)} ／ ${item.ext.toUpperCase()}</div>
+    </div>
+    <div class="file-status"><span class="badge waiting" id="badge-${item.id}">⏸ 待機中</span></div>
+    <button class="file-remove" onclick="removeInput(${item.id})">✕</button>`;
+  document.getElementById('input-list').appendChild(el);
+}
+
+function removeInput(id) {
+  const idx = inputFiles.findIndex(f => f.id === id);
+  if (idx !== -1) { inputFiles.splice(idx, 1); stats.total--; }
+  const el = document.getElementById(`in-${id}`);
+  if (el) el.remove();
+  updateStats(); updateInCount();
+}
+
+function setStatus(id, tag, text) {
+  const el = document.getElementById(`badge-${id}`);
+  if (!el) return;
+  el.className = `badge ${tag}`; el.textContent = text;
+}
+
+// ── 翻訳開始 ──────────────────────────────────────
+async function startTranslation() {
+  if (translating) return;
+  if (!inputFiles.length) { logMsg('INPUT にファイルがありません', 'warn'); return; }
+
+  const langs = getLangs();
+  if (!langs.length) { logMsg('言語を1つ以上選んでください', 'warn'); return; }
+
+  // OUTPUT初期化（今回分のみ追加）
+  if (!outputFiles.length) clearOutputUI();
+
+  translating = true;
+  document.getElementById('translate-btn').disabled = true;
+  document.getElementById('translate-btn').textContent = '⏳ 翻訳中...';
+  setStatusBar(true);
+
+  const total = inputFiles.length * langs.length;
+  let done = 0;
+
+  for (const item of inputFiles) {
+    if (item.status === 'done') continue;
+    setStatus(item.id, 'running', '⚡ 処理中');
+    try {
+      for (const {code, name} of langs) {
+        logMsg(`━━ ${item.file.name} → ${name}`, 'sec');
+        const blob = await translateFile(item, code, name);
+        const outName = `${baseName(item.file.name)}_${code}.${item.ext}`;
+        outputFiles.push({name: outName, blob, lang: name});
+        addOutputItem({name: outName, blob, lang: name});
+        done++;
+        setProgress(done / total * 100);
+        stats.done++;
+        updateStats(); updateOutCount();
+      }
+      item.status = 'done';
+      setStatus(item.id, 'done', '✅ 完了');
+    } catch(e) {
+      item.status = 'error';
+      setStatus(item.id, 'error', '❌ エラー');
+      logMsg(`❌ ${item.file.name}: ${e.message}`, 'err');
+      stats.err++;
+      updateStats();
+    }
+  }
+
+  logMsg('━━ 全処理完了', 'ok');
+  translating = false;
+  document.getElementById('translate-btn').disabled = false;
+  document.getElementById('translate-btn').textContent = '▶  翻訳開始';
+  setStatusBar(false);
+  setProgress(0);
+}
+
+// ── ファイル翻訳ディスパッチ ──────────────────────
+async function translateFile(item, langCode, langName) {
+  const ab = await item.file.arrayBuffer();
+  const ext = item.ext.toLowerCase();
+  if (ext === 'txt')              return await trTxt(ab, langCode, langName);
+  if (ext === 'xlsx' || ext === 'xls') return await trExcel(ab, langCode, langName, ext);
+  if (ext === 'docx' || ext === 'doc') return await trWord(ab, langCode, langName);
+  throw new Error('非対応形式');
+}
+
+// ── TXT翻訳 ──────────────────────────────────────
+async function trTxt(ab, lc, ln) {
+  const text  = new TextDecoder('utf-8').decode(ab).replace(/﻿/,'');
+  const lines = text.split(/\r?\n/);
+  logMsg(`   ${lines.length} 行`, 'info');
+  const out = [];
+  for (const line of lines) {
+    out.push(line.trim() ? await tr(line, lc, ln) : '');
+  }
+  return new Blob(['﻿' + out.join('\r\n')], {type:'text/plain;charset=utf-8'});
+}
+
+// ── Excel翻訳 ─────────────────────────────────────
+async function trExcel(ab, lc, ln, ext) {
+  const wb = XLSX.read(ab, {type:'array'});
+  let cnt = 0;
+  for (const sn of wb.SheetNames) {
+    const ws = wb.Sheets[sn];
+    for (const ref in ws) {
+      if (ref.startsWith('!')) continue;
+      const cell = ws[ref];
+      if (cell.t === 's' && cell.v && cell.v.trim()) {
+        cell.v = await tr(cell.v, lc, ln);
+        cell.w = cell.v;
+        cnt++;
+      }
+    }
+  }
+  logMsg(`   ${cnt} セル翻訳`, 'info');
+  const out = XLSX.write(wb, {bookType: ext === 'xls' ? 'xls' : 'xlsx', type:'array'});
+  return new Blob([out], {type:'application/octet-stream'});
+}
+
+// ── Word翻訳（JSZip + XML）────────────────────────
+async function trWord(ab, lc, ln) {
+  const zip     = await JSZip.loadAsync(ab);
+  const xmlFile = zip.file('word/document.xml');
+  if (!xmlFile) throw new Error('document.xml が見つかりません');
+  let xml = await xmlFile.async('string');
+
+  // <w:t> タグのテキストを抽出して翻訳
+  const pattern = /(<w:t(?:[^>]*)>)([^<]*)(<\/w:t>)/g;
+  const matches = [...xml.matchAll(pattern)].filter(m => m[2].trim());
+  logMsg(`   ${matches.length} テキスト要素`, 'info');
+
+  // 重複排除して翻訳
+  const cache = new Map();
+  for (const m of matches) {
+    const orig = m[2];
+    if (!cache.has(orig)) cache.set(orig, await tr(orig, lc, ln));
+  }
+  xml = xml.replace(pattern, (_, open, text, close) => {
+    const t = cache.get(text);
+    return t ? `${open}${escXml(t)}${close}` : `${open}${text}${close}`;
+  });
+
+  zip.file('word/document.xml', xml);
+  const blob = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+  return blob;
+}
+
+// ── 翻訳エンジン ──────────────────────────────────
+async function tr(text, lc, ln) {
+  const engine = document.getElementById('engine-sel').value;
+  if (engine === 'google') return await trGoogle(text, lc);
+  return await trLLM(text, ln);
+}
+
+async function trGoogle(text, lc) {
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=${lc}&dt=t&q=${encodeURIComponent(text)}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    return data[0].map(x => x[0]).join('');
+  } catch { return text; }
+}
+
+async function trLLM(text, ln) {
+  const url   = (localStorage.getItem('llm_url') || 'http://localhost:11434').replace(/\/$/,'');
+  const model = localStorage.getItem('llm_model') || 'llama3.2';
+  const api   = localStorage.getItem('llm_api')   || 'ollama';
+  const prompt = `以下の日本語テキストを${ln}に翻訳してください。翻訳文のみ返してください。\n\n${text}`;
+  try {
+    if (api === 'openai') {
+      const res = await fetch(`${url}/v1/chat/completions`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model, messages:[{role:'user',content:prompt}], temperature:0.1})
+      });
+      return (await res.json()).choices[0].message.content.trim();
+    } else {
+      const res = await fetch(`${url}/api/generate`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model, prompt, stream:false})
+      });
+      return ((await res.json()).response || text).trim();
+    }
+  } catch { return text; }
+}
+
+// ── OUTPUT UI ─────────────────────────────────────
+function clearOutputUI() {
+  document.getElementById('output-list').innerHTML = '';
+}
+
+function addOutputItem(item) {
+  const el = document.getElementById('output-list');
+  // 初期メッセージを削除
+  const empty = el.querySelector('[data-empty]');
+  if (empty) empty.remove();
+
+  const div = document.createElement('div');
+  div.className = 'file-item';
+  div.innerHTML = `
+    <div class="file-icon">${fileIcon(item.name.split('.').pop())}</div>
+    <div class="file-info">
+      <div class="file-name">${esc(item.name)}</div>
+      <div class="file-meta">${item.lang} ／ ${formatSize(item.blob.size)}</div>
+    </div>
+    <button class="dl-btn" onclick="downloadBlob('${esc(item.name)}', ${outputFiles.length - 1})">⬇ 保存</button>`;
+  el.appendChild(div);
+}
+
+function downloadBlob(name, idx) {
+  const item = outputFiles[idx];
+  if (!item) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(item.blob);
+  a.download = item.name;
+  a.click();
+}
+
+async function downloadAll() {
+  if (!outputFiles.length) { logMsg('ダウンロードするファイルがありません', 'warn'); return; }
+  logMsg('ZIPを作成中...', 'info');
+  const zip = new JSZip();
+  for (const f of outputFiles) zip.file(f.name, f.blob);
+  const blob = await zip.generateAsync({type:'blob'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `翻訳済み_${timestamp()}.zip`;
+  a.click();
+  logMsg('ZIP ダウンロード完了', 'ok');
+}
+
+// ── クリア ────────────────────────────────────────
+function clearAll() {
+  inputFiles.length = 0; outputFiles.length = 0;
+  stats = {total:0, done:0, err:0};
+  document.getElementById('input-list').innerHTML  = '';
+  document.getElementById('output-list').innerHTML = '<div data-empty style="text-align:center;color:#94a3b8;font-size:13px;padding:40px 0">翻訳後のファイルがここに表示されます</div>';
+  updateStats(); updateInCount(); updateOutCount();
+  setProgress(0);
+  logMsg('クリアしました', 'info');
+}
+
+// ── 設定 ──────────────────────────────────────────
+function openSettings() {
+  document.getElementById('llm-url').value   = localStorage.getItem('llm_url')   || 'http://localhost:11434';
+  document.getElementById('llm-model').value = localStorage.getItem('llm_model') || 'llama3.2';
+  document.getElementById('llm-api').value   = localStorage.getItem('llm_api')   || 'ollama';
+  document.getElementById('modal').classList.add('open');
+}
+function closeSettings() { document.getElementById('modal').classList.remove('open'); }
+function saveSettings() {
+  localStorage.setItem('llm_url',   document.getElementById('llm-url').value);
+  localStorage.setItem('llm_model', document.getElementById('llm-model').value);
+  localStorage.setItem('llm_api',   document.getElementById('llm-api').value);
+  logMsg('LLM設定を保存しました', 'ok');
+  closeSettings();
+}
+async function testLLM() {
+  const url = document.getElementById('llm-url').value.replace(/\/$/,'');
+  const api = document.getElementById('llm-api').value;
+  try {
+    const ep  = api === 'openai' ? `${url}/v1/models` : `${url}/api/tags`;
+    const res  = await fetch(ep, {signal: AbortSignal.timeout(5000)});
+    const data = await res.json();
+    const n    = api === 'openai' ? data.data?.length : data.models?.length;
+    logMsg(`✓ LLM接続OK (${n} モデル)`, 'ok');
+    alert(`接続成功！ ${n} モデルが見つかりました。`);
+  } catch(e) {
+    logMsg(`✗ LLM接続失敗: ${e.message}`, 'err');
+    alert('接続失敗：' + e.message);
+  }
+}
+
+// ── ログ ──────────────────────────────────────────
+function logMsg(msg, cls='info') {
+  const box = document.getElementById('log-body');
+  const ts  = new Date().toLocaleTimeString('ja-JP');
+  const el  = document.createElement('div');
+  el.innerHTML = `<span class="ts">[${ts}]</span>  <span class="${cls}">${esc(msg)}</span>`;
+  box.appendChild(el); box.scrollTop = box.scrollHeight;
+}
+function clearLog() { document.getElementById('log-body').innerHTML = ''; }
+
+// ── UI更新 ────────────────────────────────────────
+function updateStats() {
+  document.getElementById('st-total').textContent = stats.total;
+  document.getElementById('st-done').textContent  = stats.done;
+  document.getElementById('st-err').textContent   = stats.err;
+}
+function updateInCount()  { document.getElementById('in-count').textContent  = `${inputFiles.length} ファイル`; }
+function updateOutCount() { document.getElementById('out-count').textContent = `${outputFiles.length} ファイル`; }
+function setProgress(pct) { document.getElementById('prog-bar').style.width = pct + '%'; }
+function setStatusBar(running) {
+  document.getElementById('status-dot').className  = 'dot ' + (running ? 'blue' : '');
+  document.getElementById('status-text').textContent = running ? '翻訳中...' : '待機中';
+  document.getElementById('sb-engine').textContent =
+    document.getElementById('engine-sel').value === 'google' ? 'Google翻訳' : 'LLM（Ollama）';
+}
+
+// ── ユーティリティ ────────────────────────────────
+function getLangs() {
+  const l = [];
+  if (document.getElementById('lang-vi').checked)  l.push({code:'vi',    name:'ベトナム語'});
+  if (document.getElementById('lang-zh').checked)  l.push({code:'zh-CN', name:'中国語（簡体）'});
+  return l;
+}
+function fileIcon(ext) {
+  return {txt:'📄',xlsx:'📊',xls:'📊',docx:'📝',doc:'📝'}[ext.toLowerCase()] || '📁';
+}
+function formatSize(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+function baseName(name) { return name.replace(/\.[^.]+$/, ''); }
+function timestamp()    { return new Date().toISOString().slice(0,19).replace(/[T:]/g,'-'); }
+function esc(s)         { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escXml(s)      { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// 起動ログ
+logMsg('翻訳ウォッチャー Pro 起動', 'sec');
+logMsg('対応形式: TXT / Excel (.xlsx .xls) / Word (.docx .doc)', 'info');
+logMsg('ファイルをINPUTフォルダにドラッグして「翻訳開始」を押してください', 'ok');
+</script>
+</body>
+</html>
