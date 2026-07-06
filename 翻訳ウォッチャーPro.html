@@ -691,7 +691,10 @@ function buildRows(items, viewport, imgData, cw, ch) {
     groups.get(y).push(item);
   }
 
-  const makeRow = (its) => {
+  // red は呼び出し側（文字単位の判定）で確定済みの値をそのまま使う。
+  // ここで矩形全体を再サンプリングすると、文字と文字の間にある罫線（黒枠）を
+  // 拾って誤って黒と判定してしまうことがあるため。
+  const makeRow = (its, red) => {
     const text = its.map(i => i.str).join('');
     const x0p = Math.min(...its.map(i => i.transform[4]));
     const x1p = Math.max(...its.map(i => i.transform[4] + (i.width || 0)));
@@ -699,7 +702,6 @@ function buildRows(items, viewport, imgData, cw, ch) {
     const h   = Math.max(...its.map(i => i.height || Math.abs(i.transform[3]) || 8));
     const box = toViewportBox(viewport, x0p, y0p - h * 0.22, x1p, y0p + h * 0.85);
     const baseline = viewport.convertToViewportPoint(x0p, y0p);
-    const red = isRedInk(sampleBoxColor(imgData, cw, ch, box));
     return {text, box, baselineX: baseline[0], baselineY: baseline[1], fontSizePx: box.y1 - box.y0, red};
   };
 
@@ -718,12 +720,12 @@ function buildRows(items, viewport, imgData, cw, ch) {
     let run = [];
     for (const c of colored) {
       if (run.length && run[run.length - 1].red !== c.red) {
-        rows.push(makeRow(run.map(x => x.item)));
+        rows.push(makeRow(run.map(x => x.item), run[0].red));
         run = [];
       }
       run.push(c);
     }
-    if (run.length) rows.push(makeRow(run.map(x => x.item)));
+    if (run.length) rows.push(makeRow(run.map(x => x.item), run[0].red));
   }
   return rows;
 }
