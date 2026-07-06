@@ -663,8 +663,10 @@ function sampleBoxColor(imgData, cw, ch, box) {
   return best || [0, 0, 0];
 }
 
-// テキスト項目をY座標（行）でグループ化し、行ごとの原文・外接矩形・ベースラインを求める
-function buildRows(items, viewport) {
+// テキスト項目をY座標（行）でグループ化し、さらに文字単位のインク色が変わる境目でも分割する。
+// 同じ行に色の違う文字（例：黒ラベルの隣にある赤字の値）が混在していても、
+// 行全体を1色として誤判定しないよう、行ごとの原文・外接矩形・ベースライン・色を求める。
+function buildRows(items, viewport, imgData, cw, ch) {
   const groups = new Map();
   for (const item of items) {
     if (!item.str.trim()) continue;
@@ -673,19 +675,41 @@ function buildRows(items, viewport) {
     groups.get(y).push(item);
   }
 
-  return [...groups.entries()]
-    .sort((a, b) => b[0] - a[0]) // Y降順（PDF座標は下から上なので上→下の順になる）
-    .map(([, its]) => {
-      its.sort((a, b) => a.transform[4] - b.transform[4]);
-      const text = its.map(i => i.str).join('');
-      const x0p = Math.min(...its.map(i => i.transform[4]));
-      const x1p = Math.max(...its.map(i => i.transform[4] + (i.width || 0)));
-      const y0p = its[0].transform[5]; // ベースライン
-      const h   = Math.max(...its.map(i => i.height || Math.abs(i.transform[3]) || 8));
-      const box = toViewportBox(viewport, x0p, y0p - h * 0.22, x1p, y0p + h * 0.85);
-      const baseline = viewport.convertToViewportPoint(x0p, y0p);
-      return {text, box, baselineX: baseline[0], baselineY: baseline[1], fontSizePx: box.y1 - box.y0};
+  const makeRow = (its) => {
+    const text = its.map(i => i.str).join('');
+    const x0p = Math.min(...its.map(i => i.transform[4]));
+    const x1p = Math.max(...its.map(i => i.transform[4] + (i.width || 0)));
+    const y0p = its[0].transform[5]; // ベースライン
+    const h   = Math.max(...its.map(i => i.height || Math.abs(i.transform[3]) || 8));
+    const box = toViewportBox(viewport, x0p, y0p - h * 0.22, x1p, y0p + h * 0.85);
+    const baseline = viewport.convertToViewportPoint(x0p, y0p);
+    const red = isRedInk(sampleBoxColor(imgData, cw, ch, box));
+    return {text, box, baselineX: baseline[0], baselineY: baseline[1], fontSizePx: box.y1 - box.y0, red};
+  };
+
+  const rows = [];
+  for (const [, its] of [...groups.entries()].sort((a, b) => b[0] - a[0])) {
+    its.sort((a, b) => a.transform[4] - b.transform[4]);
+
+    // 文字（項目）ごとにインク色を判定し、色が変わる位置で行を分割する
+    const colored = its.map(item => {
+      const h = item.height || Math.abs(item.transform[3]) || 8;
+      const box = toViewportBox(viewport, item.transform[4], item.transform[5] - h * 0.22,
+        item.transform[4] + (item.width || 0), item.transform[5] + h * 0.85);
+      return {item, red: isRedInk(sampleBoxColor(imgData, cw, ch, box))};
     });
+
+    let run = [];
+    for (const c of colored) {
+      if (run.length && run[run.length - 1].red !== c.red) {
+        rows.push(makeRow(run.map(x => x.item)));
+        run = [];
+      }
+      run.push(c);
+    }
+    if (run.length) rows.push(makeRow(run.map(x => x.item)));
+  }
+  return rows;
 }
 
 async function trPdf(ab, lc, ln, label) {
@@ -717,7 +741,6 @@ async function trPdf(ab, lc, ln, label) {
     const page     = await pdf.getPage(p);
     const content  = await page.getTextContent();
     const viewport = page.getViewport({scale: RENDER_SCALE});
-    const rows     = buildRows(content.items, viewport);
 
     // ページをそのままレンダリング（レイアウト・画像・図表はここで保持される）
     const canvas = document.createElement('canvas');
@@ -727,6 +750,10 @@ async function trPdf(ab, lc, ln, label) {
     await page.render({canvasContext: ctx, viewport}).promise;
     const origImg = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
+    // 文字ごとのインク色を見て、同じ行でも色が変わる境目で分割する
+    // （例：黒ラベルの隣に赤字の値がある行で、色の違いを無視して丸ごと除外/翻訳してしまうのを防ぐ）
+    const rows = buildRows(content.items, viewport, origImg, canvas.width, canvas.height);
+
     // 「スリッターの部」など指定の枠内だけに絞る場合、対象区画のY範囲を求める
     const sectionScope = scope === 'slitter' ? findSectionScope(rows, 'スリッター') : null;
     if (scope === 'all' || sectionScope) anyScopeFound = true;
@@ -735,9 +762,8 @@ async function trPdf(ab, lc, ln, label) {
     const targetRows = rows.filter(row => row.text.trim()).map(row => {
       const inScope = scope === 'all' ||
         (sectionScope && row.box.y0 >= sectionScope.yTop && row.box.y0 < sectionScope.yBottom);
-      const red = isRedInk(sampleBoxColor(origImg, canvas.width, canvas.height, row.box));
-      const colorOk = colorMode === 'all' || (colorMode === 'red' ? red : !red);
-      return {...row, red, match: inScope && colorOk};
+      const colorOk = colorMode === 'all' || (colorMode === 'red' ? row.red : !row.red);
+      return {...row, match: inScope && colorOk};
     }).filter(row => row.match);
 
     if (targetRows.length) anyMatched = true;
