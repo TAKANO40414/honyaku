@@ -808,8 +808,8 @@ async function trPdf(ab, lc, ln, label) {
         (row.box.x1 - row.box.x0) + 2, (row.box.y1 - row.box.y0) + 2);
 
       const boxWidth = Math.max(1, (row.box.x1 - row.box.x0) - PAD * 2);
-      const FONT_BOOST  = 3.0;  // 翻訳文を原文より大きめに表示する
-      const MAX_FONT_PX = 40;   // 行の高さ推定が異常な場合に暴走しないようにする上限
+      const FONT_BOOST  = 2.0;  // 翻訳文を原文より大きめに表示する
+      const MAX_FONT_PX = 20;   // 行の高さ推定が異常な場合に暴走しないようにする上限
       let fontSize = Math.min(MAX_FONT_PX, Math.max(MIN_FONT_PX, row.fontSizePx * FONT_BOOST));
       let width;
       do {
