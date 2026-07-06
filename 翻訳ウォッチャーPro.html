@@ -470,22 +470,38 @@ async function batchTranslate(texts, lc, ln, onProgress) {
     batches.push({texts: texts.slice(i, i + BATCH), start: i});
   }
 
+  const MAX_RETRY = 3;
+
+  // 1バッチ分を翻訳。失敗時は待機して再試行し、行数が一致しない場合も再試行する
+  async function translateBatch(bt) {
+    const joined = bt.join('\n');
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=${lc}&dt=t&q=${encodeURIComponent(joined)}`;
+    for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const raw  = data[0].map(x => x[0]).join('');
+        const parts = raw.split('\n');
+        if (parts.length === bt.length) return parts;
+        throw new Error(`行数不一致 (入力${bt.length}行 / 結果${parts.length}行)`);
+      } catch (e) {
+        if (attempt === MAX_RETRY) {
+          logMsg(`⚠ 翻訳リクエスト失敗（${MAX_RETRY}回再試行後も失敗、原文のまま出力）: ${e.message}`, 'warn');
+          return bt; // 諦めて原文のまま返す
+        }
+        await new Promise(r => setTimeout(r, 400 * attempt)); // 少し待って再試行
+      }
+    }
+  }
+
   // PARA 個ずつ並列処理
   for (let bi = 0; bi < batches.length; bi += PARA) {
     if (cancelRequested) break;
     const chunk = batches.slice(bi, bi + PARA);
     await Promise.all(chunk.map(async ({texts: bt, start}) => {
-      const joined = bt.join('\n');
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=${lc}&dt=t&q=${encodeURIComponent(joined)}`;
-      try {
-        const res  = await fetch(url);
-        const data = await res.json();
-        const raw  = data[0].map(x => x[0]).join('');
-        const parts = raw.split('\n');
-        bt.forEach((_, i) => { results[start + i] = parts[i] ?? bt[i]; });
-      } catch {
-        bt.forEach((t, i) => { results[start + i] = t; });
-      }
+      const parts = await translateBatch(bt);
+      bt.forEach((t, i) => { results[start + i] = parts[i] ?? t; });
       done += bt.length;
       onProgress(done, texts.length, bt[bt.length - 1]);
     }));
