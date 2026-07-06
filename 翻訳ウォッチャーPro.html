@@ -150,6 +150,13 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
     <input type="checkbox" id="lang-zh" checked> 中国語
   </label>
   <div class="tb-sep"></div>
+  <span class="tb-label">PDF文字色</span>
+  <select class="tb-select" id="pdf-color-sel" title="PDF内で翻訳対象にする文字色を選択">
+    <option value="all">全文字を翻訳</option>
+    <option value="red">赤文字のみ翻訳</option>
+    <option value="black">黒文字のみ翻訳</option>
+  </select>
+  <div class="tb-sep"></div>
   <button class="tb-btn green" id="translate-btn" onclick="startTranslation()">▶  翻訳開始</button>
   <button class="tb-btn" onclick="clearAll()">🗑  クリア</button>
   <button class="tb-btn gray" onclick="downloadAll()">⬇  全ダウンロード (ZIP)</button>
@@ -567,6 +574,43 @@ function loadScript(src) {
   });
 }
 
+function getPdfColorMode() {
+  return document.getElementById('pdf-color-sel').value; // all | red | black
+}
+
+function pdfColorModeLabel(mode) {
+  return {all:'全文字', red:'赤文字のみ', black:'黒文字のみ'}[mode] || '全文字';
+}
+
+// キャンバス上のインク色から赤文字かどうかを判定
+function isRedInk([r, g, b]) {
+  return r > 100 && (r - g) > 40 && (r - b) > 40;
+}
+
+// テキスト項目の位置にあるインク色をサンプリング（背景の白は無視し、最も濃い画素を採用）
+function sampleItemColor(imgData, cw, ch, item, viewport) {
+  const w = item.width  || 4;
+  const h = item.height || Math.abs(item.transform[0]) || 8;
+  const x0p = item.transform[4], y0p = item.transform[5];
+  const [vx0, vy0] = viewport.convertToViewportPoint(x0p, y0p);
+  const [vx1, vy1] = viewport.convertToViewportPoint(x0p + w, y0p + h);
+  const minX = Math.max(0, Math.floor(Math.min(vx0, vx1)));
+  const maxX = Math.min(cw - 1, Math.ceil(Math.max(vx0, vx1)));
+  const minY = Math.max(0, Math.floor(Math.min(vy0, vy1)));
+  const maxY = Math.min(ch - 1, Math.ceil(Math.max(vy0, vy1)));
+
+  let best = null, bestDark = -1;
+  for (let yy = minY; yy <= maxY; yy++) {
+    for (let xx = minX; xx <= maxX; xx++) {
+      const idx = (yy * cw + xx) * 4;
+      const r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
+      const dark = 765 - (r + g + b); // 白背景ほど小さく、インク部分ほど大きい
+      if (dark > bestDark) { bestDark = dark; best = [r, g, b]; }
+    }
+  }
+  return best || [0, 0, 0];
+}
+
 async function trPdf(ab, lc, ln, label) {
   // PDF.js を初回のみ動的ロード
   if (!window.pdfjsLib) {
@@ -576,32 +620,53 @@ async function trPdf(ab, lc, ln, label) {
   }
 
   const pdf = await pdfjsLib.getDocument({data: new Uint8Array(ab)}).promise;
-  const numPages = pdf.numPages;
-  logMsg(`   ${numPages} ページ`, 'info');
+  const numPages  = pdf.numPages;
+  const colorMode = getPdfColorMode();
+  logMsg(`   ${numPages} ページ（翻訳対象: ${pdfColorModeLabel(colorMode)}）`, 'info');
 
   // ── ページごとにテキスト抽出 ──
   const pageTexts = [];
   for (let p = 1; p <= numPages; p++) {
     const page    = await pdf.getPage(p);
     const content = await page.getTextContent();
+    let items = content.items.filter(it => it.str.trim());
+
+    // 文字色で絞り込む場合は、ページをレンダリングして各文字位置のインク色を判定
+    if (colorMode !== 'all' && items.length) {
+      const viewport = page.getViewport({scale: 2});
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext('2d', {willReadFrequently: true});
+      await page.render({canvasContext: ctx, viewport}).promise;
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+      items = items.filter(item => {
+        const red = isRedInk(sampleItemColor(imgData, canvas.width, canvas.height, item, viewport));
+        return colorMode === 'red' ? red : !red;
+      });
+    }
 
     // Y座標でグループ化して行を復元（PDF座標は下から上）
     const rows = new Map();
-    for (const item of content.items) {
-      if (!item.str.trim()) continue;
+    for (const item of items) {
       const y = Math.round(item.transform[5]);
       if (!rows.has(y)) rows.set(y, []);
       rows.get(y).push({x: item.transform[4], str: item.str});
     }
     const lines = [...rows.entries()]
       .sort((a, b) => b[0] - a[0])          // Y降順（上→下）
-      .map(([, items]) =>
-        items.sort((a, b) => a.x - b.x).map(i => i.str).join(''));
+      .map(([, its]) =>
+        its.sort((a, b) => a.x - b.x).map(i => i.str).join(''));
     pageTexts.push(lines.join('\n'));
   }
 
   const hasText = pageTexts.some(t => t.trim());
-  if (!hasText) throw new Error('テキストが抽出できません（スキャンPDF・画像PDFは非対応）');
+  if (!hasText) {
+    throw new Error(colorMode === 'all'
+      ? 'テキストが抽出できません（スキャンPDF・画像PDFは非対応）'
+      : `「${pdfColorModeLabel(colorMode)}」に該当する文字が見つかりません`);
+  }
 
   // ── ページ単位でバッチ翻訳 ──
   const translatedPages = [];
