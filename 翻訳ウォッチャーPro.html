@@ -701,24 +701,34 @@ async function trPdf(ab, lc, ln, label) {
       prog.update(p, numPages, `<b>${label}</b><br>ページ ${p}/${numPages}（対象文字なし）`);
     }
 
-    // 対象行だけ元の文字を白で消し、同じ位置・同系色に翻訳文を描き直す（レイアウトは変更しない）
+    // 対象行だけ元の文字を白で消し、同じ位置・同系色に翻訳文を枠に収まるサイズで描き直す（レイアウトは変更しない）
+    const MIN_FONT_PX = 3;
+    const PAD = 2;
     for (const row of targetRows) {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(row.box.x0 - 1, row.box.y0 - 1,
         (row.box.x1 - row.box.x0) + 2, (row.box.y1 - row.box.y0) + 2);
 
-      ctx.fillStyle = row.red ? 'rgb(200,30,30)' : '#000000';
-      ctx.textBaseline = 'alphabetic';
-      const boxWidth = row.box.x1 - row.box.x0;
-      let fontSize = Math.max(6, row.fontSizePx);
+      const boxWidth = Math.max(1, (row.box.x1 - row.box.x0) - PAD * 2);
+      let fontSize = Math.max(MIN_FONT_PX, row.fontSizePx);
       let width;
       do {
         ctx.font = `${fontSize}px sans-serif`;
         width = ctx.measureText(row.translated).width;
-        if (width <= boxWidth || fontSize <= 6) break;
-        fontSize -= 1;
+        if (width <= boxWidth || fontSize <= MIN_FONT_PX) break;
+        fontSize -= 0.5;
       } while (true);
-      ctx.fillText(row.translated, row.baselineX, row.baselineY);
+
+      // 縮小しても収まりきらない場合に備え、枠外へはみ出さないよう必ずクリップする
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(row.box.x0 - 1, row.box.y0 - 1,
+        (row.box.x1 - row.box.x0) + 2, (row.box.y1 - row.box.y0) + 2);
+      ctx.clip();
+      ctx.fillStyle = row.red ? 'rgb(200,30,30)' : '#000000';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(row.translated, row.box.x0 + PAD, row.baselineY);
+      ctx.restore();
     }
 
     // ページ画像を出力PDFへ追加（元のページ寸法のまま＝レイアウト維持）
