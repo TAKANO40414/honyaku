@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>翻訳ウォッチャー Pro</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<!-- PDF.jsは使用時に動的ロード -->
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;background:#eef0f4;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── ツールバー ── */
+.toolbar{background:#1a1a2e;color:#fff;display:flex;align-items:center;gap:8px;padding:0 16px;height:52px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+.app-logo{font-size:18px;font-weight:700;letter-spacing:.06em;color:#fff;margin-right:8px;white-space:nowrap}
+.app-logo span{color:#60a5fa;font-size:12px;font-weight:400;margin-left:6px;opacity:.8}
+.tb-sep{width:1px;height:28px;background:#444;margin:0 4px}
+.tb-label{font-size:12px;color:#aaa;white-space:nowrap}
+.tb-select{background:#2d2d4e;color:#fff;border:1px solid #444;border-radius:5px;padding:5px 10px;font-size:12px;cursor:pointer;outline:none}
+.tb-btn{background:#2563eb;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s}
+.tb-btn:hover{background:#1d4ed8}
+.tb-btn:disabled{background:#444;cursor:not-allowed}
+.tb-btn.green{background:#16a34a}.tb-btn.green:hover{background:#15803d}
+.tb-btn.gray{background:#4b5563}.tb-btn.gray:hover{background:#374151}
+.tb-btn.red{background:#dc2626}.tb-btn.red:hover{background:#b91c1c}
+.spacer{flex:1}
+.stat-chip{background:#2d2d4e;border-radius:6px;padding:4px 12px;font-size:12px;color:#94a3b8;display:flex;align-items:center;gap:6px}
+.stat-chip b{color:#fff;font-size:14px}
+
+/* ── メイン ── */
+.workspace{display:flex;flex:1;gap:10px;padding:10px;overflow:hidden}
+
+/* ── フォルダパネル ── */
+.folder-panel{background:#fff;border-radius:10px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.folder-panel.input-panel{flex:1}
+.folder-panel.output-panel{flex:1}
+
+.folder-header{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#1e3a5f;color:#fff;font-size:13px;font-weight:700;letter-spacing:.04em;flex-shrink:0}
+.folder-header .folder-title{flex:1}
+.folder-header .folder-count{font-size:11px;background:rgba(255,255,255,.2);border-radius:20px;padding:2px 10px}
+
+.dropzone{border:2px dashed #94a3b8;border-radius:8px;margin:10px;padding:28px 12px;text-align:center;cursor:pointer;transition:all .15s;background:#f8fafc;flex-shrink:0}
+.dropzone.drag{border-color:#2563eb;background:#eff6ff}
+.dropzone:hover{border-color:#2563eb;background:#f0f7ff}
+.dropzone .dz-icon{font-size:36px;margin-bottom:6px}
+.dropzone .dz-main{font-size:14px;font-weight:700;color:#1e3a5f}
+.dropzone .dz-sub{font-size:11px;color:#94a3b8;margin-top:4px}
+#file-input{display:none}
+
+.file-list{flex:1;overflow-y:auto;padding:0 10px 10px}
+
+.file-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;background:#fff;transition:background .1s}
+.file-item:hover{background:#f8fafc}
+.file-icon{font-size:22px;flex-shrink:0}
+.file-info{flex:1;min-width:0}
+.file-name{font-size:13px;font-weight:600;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-meta{font-size:11px;color:#94a3b8;margin-top:2px}
+.file-status{flex-shrink:0}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.badge.waiting  {background:#f1f5f9;color:#64748b}
+.badge.running  {background:#eff6ff;color:#2563eb}
+.badge.done     {background:#f0fdf4;color:#16a34a}
+.badge.error    {background:#fff1f2;color:#dc2626}
+.file-remove{background:none;border:none;color:#cbd5e1;font-size:16px;cursor:pointer;padding:2px 4px;border-radius:4px;flex-shrink:0}
+.file-remove:hover{color:#dc2626;background:#fff1f2}
+
+/* 出力側 */
+.dl-btn{background:#2563eb;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0}
+.dl-btn:hover{background:#1d4ed8}
+.output-actions{padding:8px 10px;display:flex;gap:8px;border-top:1px solid #e2e8f0;flex-shrink:0}
+
+/* ── ログパネル ── */
+.log-wrap{height:160px;background:#0f172a;display:flex;flex-direction:column;flex-shrink:0}
+.log-header{padding:6px 14px;background:#1e293b;color:#94a3b8;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}
+.log-body{flex:1;overflow-y:auto;padding:6px 14px;font-family:"Courier New",monospace;font-size:12px;line-height:1.8}
+.log-body .ts{color:#475569}
+.log-body .ok{color:#86efac}
+.log-body .warn{color:#fde047}
+.log-body .err{color:#fca5a5}
+.log-body .sec{color:#67e8f9}
+.log-body .info{color:#94a3b8}
+
+/* ── ステータスバー ── */
+.statusbar{background:#1a1a2e;color:#64748b;font-size:11px;padding:4px 16px;display:flex;gap:16px;flex-shrink:0}
+.statusbar .s-item{display:flex;align-items:center;gap:5px}
+.statusbar .dot{width:7px;height:7px;border-radius:50%;background:#475569}
+.statusbar .dot.green{background:#22c55e}
+.statusbar .dot.blue{background:#3b82f6}
+
+/* ── プログレス（細バー） ── */
+.prog-bar-wrap{height:3px;background:#e2e8f0;margin:0 10px 4px;border-radius:2px;overflow:hidden;flex-shrink:0}
+.prog-bar-fill{height:100%;background:#2563eb;border-radius:2px;transition:width .2s;width:0}
+
+/* ── 進捗オーバーレイ ── */
+#prog-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:200;align-items:center;justify-content:center}
+#prog-overlay.show{display:flex}
+.prog-card{background:#1e293b;border-radius:16px;padding:32px 40px;width:520px;max-width:92vw;color:#fff;box-shadow:0 24px 80px rgba(0,0,0,.5)}
+.prog-card .pc-title{font-size:11px;font-weight:700;letter-spacing:.1em;color:#60a5fa;text-transform:uppercase;margin-bottom:6px}
+.prog-card .pc-file{font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prog-card .pc-bar-bg{background:#0f172a;border-radius:10px;height:22px;overflow:hidden;margin-bottom:10px;position:relative}
+.prog-card .pc-bar-fill{height:100%;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:10px;transition:width .25s ease;width:0;position:relative}
+.prog-card .pc-bar-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.15) 50%,transparent 100%);animation:shimmer 1.5s infinite}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}
+.prog-card .pc-stats{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:20px}
+.prog-card .pc-stat{background:#0f172a;border-radius:8px;padding:10px 12px}
+.prog-card .pc-stat-label{font-size:10px;color:#64748b;font-weight:700;letter-spacing:.06em;margin-bottom:4px}
+.prog-card .pc-stat-val{font-size:16px;font-weight:700;color:#f1f5f9}
+.prog-card .pc-stat-val.blue{color:#60a5fa}
+.prog-card .pc-stat-val.green{color:#4ade80}
+.prog-card .pc-stat-val.amber{color:#fbbf24}
+.prog-card .pc-item-bar{background:#0f172a;border-radius:8px;padding:10px 14px;font-size:12px;color:#94a3b8;margin-bottom:16px;min-height:36px;line-height:1.6}
+.prog-card .pc-item-bar b{color:#e2e8f0}
+.prog-card .pc-cancel{background:#dc2626;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s}
+.prog-card .pc-cancel:hover{background:#b91c1c}
+
+/* スクロール */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#f1f5f9}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+
+/* 設定モーダル */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:12px;width:440px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h2{font-size:16px;font-weight:700;color:#1e293b;margin-bottom:16px}
+.modal label{display:block;font-size:12px;color:#64748b;margin:10px 0 4px;font-weight:600}
+.modal input,.modal select{width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none}
+.modal input:focus,.modal select:focus{border-color:#2563eb}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+</style>
+</head>
+<body>
+
+<!-- ── ツールバー ── -->
+<div class="toolbar">
+  <div class="app-logo">翻訳ウォッチャー <span>Pro</span></div>
+  <div class="tb-sep"></div>
+  <span class="tb-label">翻訳エンジン</span>
+  <select class="tb-select" id="engine-sel">
+    <option value="google">🌐 Google翻訳</option>
+    <option value="llm">🤖 LLM（Ollama）</option>
+  </select>
+  <div class="tb-sep"></div>
+  <span class="tb-label">言語</span>
+  <label style="color:#fff;font-size:12px;display:flex;align-items:center;gap:4px">
+    <input type="checkbox" id="lang-vi" checked> ベトナム語
+  </label>
+  <label style="color:#fff;font-size:12px;display:flex;align-items:center;gap:4px">
+    <input type="checkbox" id="lang-zh" checked> 中国語
+  </label>
+  <div class="tb-sep"></div>
+  <span class="tb-label">PDF翻訳範囲</span>
+  <select class="tb-select" id="pdf-scope-sel" title="PDF内で翻訳対象にする枠を選択">
+    <option value="all">全体を翻訳</option>
+    <option value="slitter">スリッターの部の枠内だけ翻訳</option>
+  </select>
+  <div class="tb-sep"></div>
+  <span class="tb-label">PDF文字色</span>
+  <select class="tb-select" id="pdf-color-sel" title="PDF内で翻訳対象にする文字色を選択">
+    <option value="all">全文字を翻訳</option>
+    <option value="red">赤文字のみ翻訳</option>
+    <option value="black">黒文字のみ翻訳</option>
+  </select>
+  <div class="tb-sep"></div>
+  <button class="tb-btn green" id="translate-btn" onclick="startTranslation()">▶  翻訳開始</button>
+  <button class="tb-btn" onclick="clearAll()">🗑  クリア</button>
+  <button class="tb-btn gray" onclick="downloadAll()">⬇  全ダウンロード (ZIP)</button>
+  <button class="tb-btn gray" onclick="openSettings()">⚙  設定</button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" style="background:#7c3aed" onclick="loadFromInputFolder()">📂 INPUTフォルダを読込</button>
+  <label style="color:#fff;font-size:12px;display:flex;align-items:center;gap:4px">
+    <input type="checkbox" id="auto-save-output" checked> OUTPUTフォルダへ自動保存
+  </label>
+  <div class="spacer"></div>
+  <div class="stat-chip">合計 <b id="st-total">0</b></div>
+  <div class="stat-chip" style="color:#86efac">完了 <b id="st-done">0</b></div>
+  <div class="stat-chip" style="color:#fca5a5">エラー <b id="st-err">0</b></div>
+</div>
+
+<!-- ── ワークスペース ── -->
+<div class="workspace">
+
+  <!-- INPUT フォルダ -->
+  <div class="folder-panel input-panel">
+    <div class="folder-header">
+      <span>📥</span>
+      <span class="folder-title">INPUT フォルダ</span>
+      <span class="folder-count" id="in-count">0 ファイル</span>
+    </div>
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+      <div class="dz-icon">📂</div>
+      <div class="dz-main">ここにファイルをドラッグ＆ドロップ</div>
+      <div class="dz-sub">または クリックして選択　|　対応形式: TXT・Excel・Word・PDF</div>
+    </div>
+    <input type="file" id="file-input" multiple accept=".txt,.xlsx,.xls,.docx,.doc,.pdf">
+    <div class="prog-bar-wrap"><div class="prog-bar-fill" id="prog-bar"></div></div>
+    <div class="file-list" id="input-list"></div>
+  </div>
+
+  <!-- 矢印 -->
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;color:#94a3b8;font-size:28px;flex-shrink:0;gap:8px">
+    <span>→</span>
+    <span style="font-size:11px;writing-mode:vertical-rl">翻訳</span>
+  </div>
+
+  <!-- OUTPUT フォルダ -->
+  <div class="folder-panel output-panel">
+    <div class="folder-header" style="background:#14532d">
+      <span>📤</span>
+      <span class="folder-title">OUTPUT フォルダ</span>
+      <span class="folder-count" id="out-count">0 ファイル</span>
+    </div>
+    <div class="file-list" id="output-list" style="padding-top:10px">
+      <div style="text-align:center;color:#94a3b8;font-size:13px;padding:40px 0">
+        翻訳後のファイルがここに表示されます
+      </div>
+    </div>
+    <div class="output-actions">
+      <button class="tb-btn green" style="font-size:12px;padding:6px 14px" onclick="downloadAll()">⬇ 全てZIPでダウンロード</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ログ ── -->
+<div class="log-wrap">
+  <div class="log-header">
+    <span>📋</span> 処理ログ
+    <button onclick="clearLog()" style="margin-left:auto;background:none;border:none;color:#64748b;cursor:pointer;font-size:11px">クリア</button>
+  </div>
+  <div class="log-body" id="log-body"></div>
+</div>
+
+<!-- ── ステータスバー ── -->
+<div class="statusbar">
+  <div class="s-item"><div class="dot" id="status-dot"></div><span id="status-text">待機中</span></div>
+  <div class="s-item">エンジン: <span id="sb-engine">Google翻訳</span></div>
+  <div class="s-item">対応形式: TXT / Excel (.xlsx .xls) / Word (.docx .doc) / PDF (.pdf)</div>
+</div>
+
+<!-- ── 進捗オーバーレイ ── -->
+<div id="prog-overlay">
+  <div class="prog-card">
+    <div class="pc-title">翻訳処理中</div>
+    <div class="pc-file" id="po-file">準備中...</div>
+    <div class="pc-bar-bg"><div class="pc-bar-fill" id="po-bar"></div></div>
+    <div class="pc-stats">
+      <div class="pc-stat">
+        <div class="pc-stat-label">進捗</div>
+        <div class="pc-stat-val blue" id="po-pct">0%</div>
+      </div>
+      <div class="pc-stat">
+        <div class="pc-stat-label">件数</div>
+        <div class="pc-stat-val" id="po-count">0 / 0</div>
+      </div>
+      <div class="pc-stat">
+        <div class="pc-stat-label">速度</div>
+        <div class="pc-stat-val green" id="po-speed">-</div>
+      </div>
+      <div class="pc-stat">
+        <div class="pc-stat-label">残り時間</div>
+        <div class="pc-stat-val amber" id="po-eta">-</div>
+      </div>
+    </div>
+    <div class="pc-item-bar" id="po-item">待機中...</div>
+    <button class="pc-cancel" onclick="cancelTranslation()">⏹ キャンセル</button>
+  </div>
+</div>
+
+<!-- ── 設定モーダル ── -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h2>⚙ LLM設定（Ollama）</h2>
+    <label>API種別</label>
+    <select id="llm-api">
+      <option value="ollama">Ollama（標準）</option>
+      <option value="openai">OpenAI互換（LM Studio等）</option>
+    </select>
+    <label>エンドポイントURL</label>
+    <input type="text" id="llm-url" value="http://localhost:11434">
+    <label>モデル名</label>
+    <input type="text" id="llm-model" value="llama3.2">
+    <div class="modal-btns">
+      <button class="tb-btn gray" onclick="closeSettings()">キャンセル</button>
+      <button class="tb-btn" onclick="testLLM()">接続テスト</button>
+      <button class="tb-btn green" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 状態 ──────────────────────────────────────────
+const inputFiles  = [];
+const outputFiles = [];
+let translating      = false;
+let cancelRequested  = false;
+let stats = {total:0, done:0, err:0};
+let idSeq = 0;
+
+// ── 進捗トラッカー ────────────────────────────────
+const prog = {
+  total: 0, done: 0,
+  startTime: 0, lastDone: 0, lastTime: 0,
+  fileLabel: '',
+  update(done, total, itemLabel) {
+    this.done = done; this.total = total;
+    const now = Date.now();
+    const elapsed = (now - this.startTime) / 1000;
+    const speed   = elapsed > 0 ? done / elapsed : 0;
+    const remain  = speed > 0 && done < total ? (total - done) / speed : 0;
+    const pct     = total > 0 ? Math.round(done / total * 100) : 0;
+
+    document.getElementById('po-bar').style.width   = pct + '%';
+    document.getElementById('po-pct').textContent   = pct + '%';
+    document.getElementById('po-count').textContent = `${done} / ${total}`;
+    document.getElementById('po-speed').textContent = speed >= 1
+      ? `${speed.toFixed(1)} 件/秒` : `${(speed*60).toFixed(1)} 件/分`;
+    document.getElementById('po-eta').textContent = remain > 0
+      ? (remain >= 60 ? `${Math.ceil(remain/60)} 分` : `${Math.ceil(remain)} 秒`) : '-';
+    document.getElementById('po-file').textContent  = this.fileLabel;
+    if (itemLabel) document.getElementById('po-item').innerHTML = itemLabel;
+    // 細バーも同期
+    document.getElementById('prog-bar').style.width = pct + '%';
+  },
+  start(fileLabel) {
+    this.startTime = Date.now(); this.done = 0; this.fileLabel = fileLabel;
+    document.getElementById('prog-overlay').classList.add('show');
+  },
+  finish() {
+    document.getElementById('prog-overlay').classList.remove('show');
+    document.getElementById('prog-bar').style.width = '0';
+  }
+};
+
+// ── ファイル入力 ───────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  addFiles([...e.target.files]);
+  e.target.value = '';
+});
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  addFiles([...e.dataTransfer.files]);
+});
+
+// ── デスクトップのINPUT/OUTPUTフォルダ連携（server.py 経由）──────
+// server.pyがデスクトップに作成する INPUT/OUTPUT フォルダとやり取りする。
+// file:// で直接開いた場合など、サーバーが無い環境では静かに失敗して何もしない。
+async function loadFromInputFolder() {
+  try {
+    const res = await fetch('/api/input-files');
+    if (!res.ok) throw new Error('サーバー応答エラー');
+    const {files, inputDir} = await res.json();
+    if (!files.length) { logMsg(`INPUTフォルダ(${inputDir})にファイルがありません`, 'warn'); return; }
+
+    const loaded = [];
+    for (const f of files) {
+      const fr = await fetch(`/api/input-file/${encodeURIComponent(f.name)}`);
+      const buf = await fr.arrayBuffer();
+      loaded.push(new File([buf], f.name));
+    }
+    addFiles(loaded);
+    logMsg(`📂 INPUTフォルダ(${inputDir})から ${loaded.length} 件読み込みました`, 'ok');
+  } catch (e) {
+    logMsg(`⚠ INPUTフォルダの読込に失敗しました（server.pyが起動しているか確認してください）: ${e.message}`, 'warn');
+  }
+}
+
+async function saveToOutputFolder(name, blob) {
+  try {
+    const res = await fetch(`/api/output-file/${encodeURIComponent(name)}`, {
+      method: 'POST',
+      body: blob,
+    });
+    if (!res.ok) throw new Error('サーバー応答エラー');
+  } catch (e) {
+    logMsg(`⚠ OUTPUTフォルダへの自動保存に失敗しました: ${e.message}`, 'warn');
+  }
+}
+
+function addFiles(files) {
+  const allowed = ['txt','xlsx','xls','docx','doc','pdf'];
+  for (const f of files) {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!allowed.includes(ext)) { logMsg(`⚠ 非対応: ${f.name}`, 'warn'); continue; }
+    const id = ++idSeq;
+    inputFiles.push({file:f, id, ext, status:'waiting'});
+    renderInputItem({file:f, id, ext, status:'waiting'});
+    stats.total++;
+  }
+  updateStats();
+  updateInCount();
+}
+
+function renderInputItem(item) {
+  const el = document.createElement('div');
+  el.className = 'file-item'; el.id = `in-${item.id}`;
+  el.innerHTML = `
+    <div class="file-icon">${fileIcon(item.ext)}</div>
+    <div class="file-info">
+      <div class="file-name">${esc(item.file.name)}</div>
+      <div class="file-meta">${formatSize(item.file.size)} ／ ${item.ext.toUpperCase()}</div>
+    </div>
+    <div class="file-status"><span class="badge waiting" id="badge-${item.id}">⏸ 待機中</span></div>
+    <button class="file-remove" onclick="removeInput(${item.id})">✕</button>`;
+  document.getElementById('input-list').appendChild(el);
+}
+
+function removeInput(id) {
+  const idx = inputFiles.findIndex(f => f.id === id);
+  if (idx !== -1) { inputFiles.splice(idx, 1); stats.total--; }
+  const el = document.getElementById(`in-${id}`);
+  if (el) el.remove();
+  updateStats(); updateInCount();
+}
+
+function setStatus(id, tag, text) {
+  const el = document.getElementById(`badge-${id}`);
+  if (!el) return;
+  el.className = `badge ${tag}`; el.textContent = text;
+}
+
+// ── 翻訳開始 ──────────────────────────────────────
+async function startTranslation() {
+  if (translating) return;
+  if (!inputFiles.length) { logMsg('INPUT にファイルがありません', 'warn'); return; }
+  const langs = getLangs();
+  if (!langs.length) { logMsg('言語を1つ以上選んでください', 'warn'); return; }
+  if (!outputFiles.length) clearOutputUI();
+
+  translating = true; cancelRequested = false;
+  document.getElementById('translate-btn').disabled = true;
+  document.getElementById('translate-btn').textContent = '⏳ 翻訳中...';
+  setStatusBar(true);
+
+  for (const item of inputFiles) {
+    if (cancelRequested) break;
+    if (item.status === 'done') continue;
+    setStatus(item.id, 'running', '⚡ 処理中');
+    try {
+      for (const {code, name} of langs) {
+        if (cancelRequested) break;
+        logMsg(`━━ ${item.file.name} → ${name}`, 'sec');
+        const {blob, outExt} = await translateFile(item, code, name);
+        const outName = `${baseName(item.file.name)}_${code}.${outExt}`;
+        outputFiles.push({name: outName, blob, lang: name});
+        addOutputItem({name: outName, blob, lang: name});
+        if (document.getElementById('auto-save-output')?.checked) {
+          await saveToOutputFolder(outName, blob);
+        }
+        stats.done++; updateStats(); updateOutCount();
+      }
+      if (!cancelRequested) {
+        item.status = 'done';
+        setStatus(item.id, 'done', '✅ 完了');
+      }
+    } catch(e) {
+      item.status = 'error';
+      setStatus(item.id, 'error', '❌ エラー');
+      logMsg(`❌ ${item.file.name}: ${e.message}`, 'err');
+      stats.err++; updateStats();
+    }
+  }
+
+  prog.finish();
+  logMsg(cancelRequested ? '━━ キャンセルしました' : '━━ 全処理完了', cancelRequested ? 'warn' : 'ok');
+  translating = false; cancelRequested = false;
+  document.getElementById('translate-btn').disabled = false;
+  document.getElementById('translate-btn').textContent = '▶  翻訳開始';
+  setStatusBar(false);
+}
+
+function cancelTranslation() { cancelRequested = true; }
+
+// ── ファイル翻訳ディスパッチ ──────────────────────
+async function translateFile(item, langCode, langName) {
+  const ab  = await item.file.arrayBuffer();
+  const ext = item.ext.toLowerCase();
+  const label = `${item.file.name}  →  ${langName}`;
+  prog.start(label);
+  if (ext === 'txt')                   return {blob: await trTxt(ab, langCode, langName, label),   outExt: 'txt'};
+  if (ext === 'xlsx' || ext === 'xls') return {blob: await trExcel(ab, langCode, langName, ext, label), outExt: ext};
+  if (ext === 'docx' || ext === 'doc') return {blob: await trWord(ab, langCode, langName, label),  outExt: ext};
+  if (ext === 'pdf')                   return {blob: await trPdf(ab, langCode, langName, label),   outExt: 'pdf'};
+  throw new Error('非対応形式');
+}
+
+// ── バッチ翻訳コア（Google・30件まとめて送信）────
+// テキスト配列を受け取り翻訳済み配列を返す
+async function batchTranslate(texts, lc, ln, onProgress) {
+  const engine = document.getElementById('engine-sel').value;
+  if (engine !== 'google') {
+    // LLMは1件ずつ
+    const out = [];
+    for (let i = 0; i < texts.length; i++) {
+      if (cancelRequested) break;
+      out.push(await trLLM(texts[i], ln));
+      onProgress(i + 1, texts.length, texts[i]);
+    }
+    return out;
+  }
+
+  const BATCH = 30;   // 1リクエストあたりの件数
+  const PARA  = 3;    // 並列リクエスト数
+  const results = new Array(texts.length).fill('');
+  let done = 0;
+
+  // バッチに分割
+  const batches = [];
+  for (let i = 0; i < texts.length; i += BATCH) {
+    batches.push({texts: texts.slice(i, i + BATCH), start: i});
+  }
+
+  const MAX_RETRY = 3;
+
+  // 1バッチ分を翻訳。失敗時は待機して再試行し、行数が一致しない場合も再試行する
+  async function translateBatch(bt) {
+    const joined = bt.join('\n');
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=${lc}&dt=t&q=${encodeURIComponent(joined)}`;
+    for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const raw  = data[0].map(x => x[0]).join('');
+        const parts = raw.split('\n');
+        if (parts.length === bt.length) return parts;
+        throw new Error(`行数不一致 (入力${bt.length}行 / 結果${parts.length}行)`);
+      } catch (e) {
+        if (attempt === MAX_RETRY) {
+          logMsg(`⚠ 翻訳リクエスト失敗（${MAX_RETRY}回再試行後も失敗、原文のまま出力）: ${e.message}`, 'warn');
+          return bt; // 諦めて原文のまま返す
+        }
+        await new Promise(r => setTimeout(r, 400 * attempt)); // 少し待って再試行
+      }
+    }
+  }
+
+  // PARA 個ずつ並列処理
+  for (let bi = 0; bi < batches.length; bi += PARA) {
+    if (cancelRequested) break;
+    const chunk = batches.slice(bi, bi + PARA);
+    await Promise.all(chunk.map(async ({texts: bt, start}) => {
+      const parts = await translateBatch(bt);
+      bt.forEach((t, i) => { results[start + i] = parts[i] ?? t; });
+      done += bt.length;
+      onProgress(done, texts.length, bt[bt.length - 1]);
+    }));
+  }
+  return results;
+}
+
+// ── TXT翻訳 ──────────────────────────────────────
+async function trTxt(ab, lc, ln, label) {
+  const text  = new TextDecoder('utf-8').decode(ab).replace(/﻿/,'');
+  const lines = text.split(/\r?\n/);
+  const nonEmpty = lines.map((l, i) => ({i, l, isBlank: !l.trim()}));
+  const targets  = nonEmpty.filter(x => !x.isBlank).map(x => x.l);
+  logMsg(`   ${lines.length} 行 / 翻訳対象: ${targets.length} 行`, 'info');
+
+  prog.update(0, targets.length, `<b>${label}</b> — ${targets.length} 行を一括翻訳`);
+  const translated = await batchTranslate(targets, lc, ln,
+    (d, t, last) => prog.update(d, t, `<b>${label}</b><br>行 ${d}/${t}：${esc(last?.slice(0,40) ?? '')}`));
+
+  let ti = 0;
+  const out = lines.map(l => l.trim() ? (translated[ti++] ?? l) : '');
+  return new Blob(['﻿' + out.join('\r\n')], {type:'text/plain;charset=utf-8'});
+}  // ← trTxt はブロブを直接返す（translateFile側で outExt:'txt' を付与）
+
+// ── Excel翻訳 ─────────────────────────────────────
+async function trExcel(ab, lc, ln, ext, label) {
+  const wb = XLSX.read(ab, {type:'array'});
+  // 対象セルを全シートから収集
+  const targets = [];   // {sn, ref, orig}
+  for (const sn of wb.SheetNames) {
+    const ws = wb.Sheets[sn];
+    for (const ref in ws) {
+      if (ref.startsWith('!')) continue;
+      const cell = ws[ref];
+      if (cell.t === 's' && cell.v && cell.v.trim())
+        targets.push({sn, ref, orig: cell.v});
+    }
+  }
+  logMsg(`   ${targets.length} セル翻訳`, 'info');
+  prog.update(0, targets.length, `<b>${label}</b> — ${targets.length} セルを一括翻訳`);
+
+  const texts      = targets.map(x => x.orig);
+  const translated = await batchTranslate(texts, lc, ln,
+    (d, t, last) => prog.update(d, t, `<b>${label}</b><br>セル ${d}/${t}：${esc(last?.slice(0,40) ?? '')}`));
+
+  targets.forEach(({sn, ref, orig}, i) => {
+    const cell = wb.Sheets[sn][ref];
+    cell.v = translated[i] ?? orig;
+    cell.w = cell.v;
+  });
+  const out = XLSX.write(wb, {bookType: ext === 'xls' ? 'xls' : 'xlsx', type:'array'});
+  return new Blob([out], {type:'application/octet-stream'});
+}
+
+// ── Word翻訳（JSZip + XML）────────────────────────
+async function trWord(ab, lc, ln, label) {
+  const zip     = await JSZip.loadAsync(ab);
+  const xmlFile = zip.file('word/document.xml');
+  if (!xmlFile) throw new Error('document.xml が見つかりません');
+  let xml = await xmlFile.async('string');
+
+  const pattern = /(<w:t(?:[^>]*)>)([^<]*)(<\/w:t>)/g;
+  const matches = [...xml.matchAll(pattern)].filter(m => m[2].trim());
+
+  // 重複排除
+  const uniq = [...new Set(matches.map(m => m[2]))];
+  logMsg(`   ${matches.length} 要素 / ユニーク: ${uniq.length}`, 'info');
+  prog.update(0, uniq.length, `<b>${label}</b> — ${uniq.length} テキスト要素を一括翻訳`);
+
+  const translated = await batchTranslate(uniq, lc, ln,
+    (d, t, last) => prog.update(d, t, `<b>${label}</b><br>要素 ${d}/${t}：${esc(last?.slice(0,40) ?? '')}`));
+
+  const cache = new Map(uniq.map((orig, i) => [orig, translated[i]]));
+  xml = xml.replace(pattern, (_, open, text, close) => {
+    const t = cache.get(text);
+    return t ? `${open}${escXml(t)}${close}` : `${open}${text}${close}`;
+  });
+
+  zip.file('word/document.xml', xml);
+  return zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+}
+
+// ── PDF翻訳（PDF.js でレイアウトを維持したまま文字だけ差し替え → PDF出力）────
+const PDFJS_BASE = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/';
+const JSPDF_URL  = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+function getPdfColorMode() {
+  return document.getElementById('pdf-color-sel').value; // all | red | black
+}
+
+function pdfColorModeLabel(mode) {
+  return {all:'全文字', red:'赤文字のみ', black:'黒文字のみ'}[mode] || '全文字';
+}
+
+function getPdfScope() {
+  return document.getElementById('pdf-scope-sel').value; // all | slitter
+}
+
+function pdfScopeLabel(scope) {
+  return {all:'全体', slitter:'スリッターの部の枠内のみ'}[scope] || '全体';
+}
+
+// 空白（半角・全角）を除いた行テキスト。見出し判定・キーワード検索に使う
+function normalizeRowText(t) {
+  return t.replace(/[\s　]/g, '');
+}
+
+// 「◯◯の部」のような区画見出し行かどうか（帳票の各枠を区切るタイトル行）
+function isSectionHeaderRow(normText) {
+  return normText.length > 0 && normText.length <= 20 && /.+の部$/.test(normText);
+}
+
+// rows（ページ内の行、上→下の順）から、指定キーワードを含む見出しの区画範囲(Y座標)を求める。
+// 開始＝見出し行の上端、終了＝次の見出し行の上端（無ければページ末尾まで）。
+// 見つからなければ null（このページに該当区画が無い）。
+function findSectionScope(rows, keyword) {
+  // 「◯◯の部」という区画見出し行そのものだけを対象にする。
+  // 単にキーワードを含む行（ページタイトルの注記等）を拾わないようにするため。
+  const headerIdx = rows.findIndex(r => {
+    const n = normalizeRowText(r.text);
+    return n.includes(keyword) && isSectionHeaderRow(n);
+  });
+  if (headerIdx === -1) return null;
+
+  // 次の「◯◯の部」見出し行の直前までを区画とする（無ければページ末尾まで）
+  const nextHeaderIdx = rows.findIndex((r, i) =>
+    i > headerIdx && isSectionHeaderRow(normalizeRowText(r.text)));
+
+  return {
+    yTop:    rows[headerIdx].box.y0 - 4, // 上の罫線ごと含めるよう少し余裕を持たせる
+    yBottom: nextHeaderIdx !== -1 ? rows[nextHeaderIdx].box.y0 - 1 : Infinity,
+  };
+}
+
+// キャンバス上のインク色から赤文字かどうかを判定
+function isRedInk([r, g, b]) {
+  return r > 100 && (r - g) > 40 && (r - b) > 40;
+}
+
+// ページ座標(pt)の矩形をビューポート(canvas px)座標へ変換した外接矩形を返す
+function toViewportBox(viewport, x0p, y0p, x1p, y1p) {
+  const [vx0, vy0] = viewport.convertToViewportPoint(x0p, y0p);
+  const [vx1, vy1] = viewport.convertToViewportPoint(x1p, y1p);
+  return {
+    x0: Math.min(vx0, vx1), x1: Math.max(vx0, vx1),
+    y0: Math.min(vy0, vy1), y1: Math.max(vy0, vy1),
+  };
+}
+
+// テキスト項目群のインク色をサンプリング（背景の白は無視し、最も濃い画素を採用）
+function sampleBoxColor(imgData, cw, ch, box) {
+  const minX = Math.max(0, Math.floor(box.x0));
+  const maxX = Math.min(cw - 1, Math.ceil(box.x1));
+  const minY = Math.max(0, Math.floor(box.y0));
+  const maxY = Math.min(ch - 1, Math.ceil(box.y1));
+
+  let best = null, bestDark = -1;
+  for (let yy = minY; yy <= maxY; yy++) {
+    for (let xx = minX; xx <= maxX; xx++) {
+      const idx = (yy * cw + xx) * 4;
+      const r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
+      const dark = 765 - (r + g + b); // 白背景ほど小さく、インク部分ほど大きい
+      if (dark > bestDark) { bestDark = dark; best = [r, g, b]; }
+    }
+  }
+  return best || [0, 0, 0];
+}
+
+// テキスト項目をY座標（行）でグループ化し、さらに文字単位のインク色が変わる境目でも分割する。
+// 同じ行に色の違う文字（例：黒ラベルの隣にある赤字の値）が混在していても、
+// 行全体を1色として誤判定しないよう、行ごとの原文・外接矩形・ベースライン・色を求める。
+function buildRows(items, viewport, imgData, cw, ch) {
+  const groups = new Map();
+  for (const item of items) {
+    if (!item.str.trim()) continue;
+    const y = Math.round(item.transform[5]);
+    if (!groups.has(y)) groups.set(y, []);
+    groups.get(y).push(item);
+  }
+
+  // red は呼び出し側（文字単位の判定）で確定済みの値をそのまま使う。
+  // ここで矩形全体を再サンプリングすると、文字と文字の間にある罫線（黒枠）を
+  // 拾って誤って黒と判定してしまうことがあるため。
+  const makeRow = (its, red) => {
+    const text = its.map(i => i.str).join('');
+    const x0p = Math.min(...its.map(i => i.transform[4]));
+    const x1p = Math.max(...its.map(i => i.transform[4] + (i.width || 0)));
+    const y0p = its[0].transform[5]; // ベースライン
+    const h   = Math.max(...its.map(i => i.height || Math.abs(i.transform[3]) || 8));
+    const box = toViewportBox(viewport, x0p, y0p - h * 0.22, x1p, y0p + h * 0.85);
+    const baseline = viewport.convertToViewportPoint(x0p, y0p);
+    return {text, box, baselineX: baseline[0], baselineY: baseline[1], fontSizePx: box.y1 - box.y0, red};
+  };
+
+  const rows = [];
+  for (const [, its] of [...groups.entries()].sort((a, b) => b[0] - a[0])) {
+    its.sort((a, b) => a.transform[4] - b.transform[4]);
+
+    // 文字（項目）ごとにインク色を判定し、色が変わる位置で行を分割する
+    const colored = its.map(item => {
+      const h = item.height || Math.abs(item.transform[3]) || 8;
+      const box = toViewportBox(viewport, item.transform[4], item.transform[5] - h * 0.22,
+        item.transform[4] + (item.width || 0), item.transform[5] + h * 0.85);
+      return {item, red: isRedInk(sampleBoxColor(imgData, cw, ch, box))};
+    });
+
+    let run = [];
+    for (const c of colored) {
+      if (run.length && run[run.length - 1].red !== c.red) {
+        rows.push(makeRow(run.map(x => x.item), run[0].red));
+        run = [];
+      }
+      run.push(c);
+    }
+    if (run.length) rows.push(makeRow(run.map(x => x.item), run[0].red));
+  }
+  return rows;
+}
+
+async function trPdf(ab, lc, ln, label) {
+  // PDF.js / jsPDF を初回のみ動的ロード
+  if (!window.pdfjsLib) {
+    logMsg('PDF.js を読み込み中...', 'info');
+    await loadScript(PDFJS_BASE + 'pdf.min.js');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js';
+  }
+  if (!window.jspdf) {
+    logMsg('jsPDF を読み込み中...', 'info');
+    await loadScript(JSPDF_URL);
+  }
+  const { jsPDF } = window.jspdf;
+
+  const pdf = await pdfjsLib.getDocument({data: new Uint8Array(ab)}).promise;
+  const numPages  = pdf.numPages;
+  const colorMode = getPdfColorMode();
+  const scope     = getPdfScope();
+  logMsg(`   ${numPages} ページ（翻訳範囲: ${pdfScopeLabel(scope)} / 翻訳対象: ${pdfColorModeLabel(colorMode)}、レイアウトは維持したまま文字のみ変換）`, 'info');
+
+  const RENDER_SCALE = 2; // 画質確保のためのレンダリング倍率
+  let anyMatched = false;
+  let anyScopeFound = false;
+  let outPdf = null;
+
+  for (let p = 1; p <= numPages; p++) {
+    if (cancelRequested) break;
+    const page     = await pdf.getPage(p);
+    const content  = await page.getTextContent();
+    const viewport = page.getViewport({scale: RENDER_SCALE});
+
+    // ページをそのままレンダリング（レイアウト・画像・図表はここで保持される）
+    const canvas = document.createElement('canvas');
+    canvas.width  = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext('2d', {willReadFrequently: true});
+    await page.render({canvasContext: ctx, viewport}).promise;
+    const origImg = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+    // 文字ごとのインク色を見て、同じ行でも色が変わる境目で分割する
+    // （例：黒ラベルの隣に赤字の値がある行で、色の違いを無視して丸ごと除外/翻訳してしまうのを防ぐ）
+    const rows = buildRows(content.items, viewport, origImg, canvas.width, canvas.height);
+
+    // 「スリッターの部」など指定の枠内だけに絞る場合、対象区画のY範囲を求める
+    const sectionScope = scope === 'slitter' ? findSectionScope(rows, 'スリッター') : null;
+    if (scope === 'all' || sectionScope) anyScopeFound = true;
+
+    // 各行の文字色・区画範囲を判定し、条件に合う行だけを翻訳対象にする
+    const targetRows = rows.filter(row => row.text.trim()).map(row => {
+      const inScope = scope === 'all' ||
+        (sectionScope && row.box.y0 >= sectionScope.yTop && row.box.y0 < sectionScope.yBottom);
+      const colorOk = colorMode === 'all' || (colorMode === 'red' ? row.red : !row.red);
+      return {...row, match: inScope && colorOk};
+    }).filter(row => row.match);
+
+    if (targetRows.length) anyMatched = true;
+
+    // 対象行をまとめて翻訳
+    if (targetRows.length) {
+      const texts = targetRows.map(r => r.text);
+      const tl = await batchTranslate(
+        texts, lc, ln,
+        (d, t) => prog.update(p - 1 + d / t, numPages,
+          `<b>${label}</b><br>ページ ${p}/${numPages} — 行 ${d}/${t}`)
+      );
+      targetRows.forEach((row, i) => { row.translated = tl[i] ?? row.text; });
+    } else {
+      prog.update(p, numPages, `<b>${label}</b><br>ページ ${p}/${numPages}（対象文字なし）`);
+    }
+
+    // 対象行だけ元の文字を白で消し、同じ位置・同系色に翻訳文を枠に収まるサイズで描き直す（レイアウトは変更しない）
+    const MIN_FONT_PX = 3;
+    const PAD = 2;
+    for (const row of targetRows) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(row.box.x0 - 1, row.box.y0 - 1,
+        (row.box.x1 - row.box.x0) + 2, (row.box.y1 - row.box.y0) + 2);
+
+      const boxWidth = Math.max(1, (row.box.x1 - row.box.x0) - PAD * 2);
+      const FONT_BOOST  = 2.0;  // 翻訳文を原文より大きめに表示する
+      const MAX_FONT_PX = 20;   // 行の高さ推定が異常な場合に暴走しないようにする上限
+      let fontSize = Math.min(MAX_FONT_PX, Math.max(MIN_FONT_PX, row.fontSizePx * FONT_BOOST));
+      let width;
+      do {
+        ctx.font = `${fontSize}px sans-serif`;
+        width = ctx.measureText(row.translated).width;
+        if (width <= boxWidth || fontSize <= MIN_FONT_PX) break;
+        fontSize -= 0.5;
+      } while (true);
+
+      // 縮小しても収まりきらない場合に備え、枠外へはみ出さないよう必ずクリップする
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(row.box.x0 - 1, row.box.y0 - 1,
+        (row.box.x1 - row.box.x0) + 2, (row.box.y1 - row.box.y0) + 2);
+      ctx.clip();
+      ctx.fillStyle = row.red ? 'rgb(200,30,30)' : '#000000';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(row.translated, row.box.x0 + PAD, row.baselineY);
+      ctx.restore();
+    }
+
+    // ページ画像を出力PDFへ追加（元のページ寸法のまま＝レイアウト維持）
+    const pw = viewport.width  / RENDER_SCALE;
+    const ph = viewport.height / RENDER_SCALE;
+    const orientation = pw > ph ? 'landscape' : 'portrait';
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    if (!outPdf) {
+      outPdf = new jsPDF({unit: 'pt', format: [pw, ph], orientation});
+    } else {
+      outPdf.addPage([pw, ph], orientation);
+    }
+    outPdf.addImage(imgData, 'JPEG', 0, 0, pw, ph);
+  }
+
+  if (scope !== 'all' && !anyScopeFound) {
+    throw new Error(`「${pdfScopeLabel(scope)}」の見出しが見つかりません`);
+  }
+  if (!anyMatched) {
+    throw new Error(colorMode === 'all'
+      ? 'テキストが抽出できません（スキャンPDF・画像PDFは非対応）'
+      : `「${pdfScopeLabel(scope)}」の範囲内に「${pdfColorModeLabel(colorMode)}」に該当する文字が見つかりません`);
+  }
+
+  return outPdf.output('blob');
+}
+
+// ── 翻訳エンジン（単体）──────────────────────────
+async function trGoogle(text, lc) {
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=${lc}&dt=t&q=${encodeURIComponent(text)}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    return data[0].map(x => x[0]).join('');
+  } catch { return text; }
+}
+
+async function tr(text, lc, ln) {
+  const engine = document.getElementById('engine-sel').value;
+  if (engine === 'google') return await trGoogle(text, lc);
+  return await trLLM(text, ln);
+}
+
+async function trLLM(text, ln) {
+  const url   = (localStorage.getItem('llm_url') || 'http://localhost:11434').replace(/\/$/,'');
+  const model = localStorage.getItem('llm_model') || 'llama3.2';
+  const api   = localStorage.getItem('llm_api')   || 'ollama';
+  const prompt = `以下の日本語テキストを${ln}に翻訳してください。翻訳文のみ返してください。\n\n${text}`;
+  try {
+    if (api === 'openai') {
+      const res = await fetch(`${url}/v1/chat/completions`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model, messages:[{role:'user',content:prompt}], temperature:0.1})
+      });
+      return (await res.json()).choices[0].message.content.trim();
+    } else {
+      const res = await fetch(`${url}/api/generate`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model, prompt, stream:false})
+      });
+      return ((await res.json()).response || text).trim();
+    }
+  } catch { return text; }
+}
+
+// ── OUTPUT UI ─────────────────────────────────────
+function clearOutputUI() {
+  document.getElementById('output-list').innerHTML = '';
+}
+
+function addOutputItem(item) {
+  const el = document.getElementById('output-list');
+  // 初期メッセージを削除
+  const empty = el.querySelector('[data-empty]');
+  if (empty) empty.remove();
+
+  const div = document.createElement('div');
+  div.className = 'file-item';
+  div.innerHTML = `
+    <div class="file-icon">${fileIcon(item.name.split('.').pop())}</div>
+    <div class="file-info">
+      <div class="file-name">${esc(item.name)}</div>
+      <div class="file-meta">${item.lang} ／ ${formatSize(item.blob.size)}</div>
+    </div>
+    <button class="dl-btn" onclick="downloadBlob('${esc(item.name)}', ${outputFiles.length - 1})">⬇ 保存</button>`;
+  el.appendChild(div);
+}
+
+function downloadBlob(name, idx) {
+  const item = outputFiles[idx];
+  if (!item) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(item.blob);
+  a.download = item.name;
+  a.click();
+}
+
+async function downloadAll() {
+  if (!outputFiles.length) { logMsg('ダウンロードするファイルがありません', 'warn'); return; }
+  logMsg('ZIPを作成中...', 'info');
+  const zip = new JSZip();
+  for (const f of outputFiles) zip.file(f.name, f.blob);
+  const blob = await zip.generateAsync({type:'blob'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `翻訳済み_${timestamp()}.zip`;
+  a.click();
+  logMsg('ZIP ダウンロード完了', 'ok');
+}
+
+// ── クリア ────────────────────────────────────────
+function clearAll() {
+  inputFiles.length = 0; outputFiles.length = 0;
+  stats = {total:0, done:0, err:0};
+  document.getElementById('input-list').innerHTML  = '';
+  document.getElementById('output-list').innerHTML = '<div data-empty style="text-align:center;color:#94a3b8;font-size:13px;padding:40px 0">翻訳後のファイルがここに表示されます</div>';
+  updateStats(); updateInCount(); updateOutCount();
+  setProgress(0);
+  logMsg('クリアしました', 'info');
+}
+
+// ── 設定 ──────────────────────────────────────────
+function openSettings() {
+  document.getElementById('llm-url').value   = localStorage.getItem('llm_url')   || 'http://localhost:11434';
+  document.getElementById('llm-model').value = localStorage.getItem('llm_model') || 'llama3.2';
+  document.getElementById('llm-api').value   = localStorage.getItem('llm_api')   || 'ollama';
+  document.getElementById('modal').classList.add('open');
+}
+function closeSettings() { document.getElementById('modal').classList.remove('open'); }
+function saveSettings() {
+  localStorage.setItem('llm_url',   document.getElementById('llm-url').value);
+  localStorage.setItem('llm_model', document.getElementById('llm-model').value);
+  localStorage.setItem('llm_api',   document.getElementById('llm-api').value);
+  logMsg('LLM設定を保存しました', 'ok');
+  closeSettings();
+}
+async function testLLM() {
+  const url = document.getElementById('llm-url').value.replace(/\/$/,'');
+  const api = document.getElementById('llm-api').value;
+  try {
+    const ep  = api === 'openai' ? `${url}/v1/models` : `${url}/api/tags`;
+    const res  = await fetch(ep, {signal: AbortSignal.timeout(5000)});
+    const data = await res.json();
+    const n    = api === 'openai' ? data.data?.length : data.models?.length;
+    logMsg(`✓ LLM接続OK (${n} モデル)`, 'ok');
+    alert(`接続成功！ ${n} モデルが見つかりました。`);
+  } catch(e) {
+    logMsg(`✗ LLM接続失敗: ${e.message}`, 'err');
+    alert('接続失敗：' + e.message);
+  }
+}
+
+// ── ログ ──────────────────────────────────────────
+function logMsg(msg, cls='info') {
+  const box = document.getElementById('log-body');
+  const ts  = new Date().toLocaleTimeString('ja-JP');
+  const el  = document.createElement('div');
+  el.innerHTML = `<span class="ts">[${ts}]</span>  <span class="${cls}">${esc(msg)}</span>`;
+  box.appendChild(el); box.scrollTop = box.scrollHeight;
+}
+function clearLog() { document.getElementById('log-body').innerHTML = ''; }
+
+// ── UI更新 ────────────────────────────────────────
+function updateStats() {
+  document.getElementById('st-total').textContent = stats.total;
+  document.getElementById('st-done').textContent  = stats.done;
+  document.getElementById('st-err').textContent   = stats.err;
+}
+function updateInCount()  { document.getElementById('in-count').textContent  = `${inputFiles.length} ファイル`; }
+function updateOutCount() { document.getElementById('out-count').textContent = `${outputFiles.length} ファイル`; }
+function setStatusBar(running) {
+  document.getElementById('status-dot').className  = 'dot ' + (running ? 'blue' : '');
+  document.getElementById('status-text').textContent = running ? '翻訳中...' : '待機中';
+  document.getElementById('sb-engine').textContent =
+    document.getElementById('engine-sel').value === 'google' ? 'Google翻訳' : 'LLM（Ollama）';
+}
+
+// ── ユーティリティ ────────────────────────────────
+function getLangs() {
+  const l = [];
+  if (document.getElementById('lang-vi').checked)  l.push({code:'vi',    name:'ベトナム語'});
+  if (document.getElementById('lang-zh').checked)  l.push({code:'zh-CN', name:'中国語（簡体）'});
+  return l;
+}
+function fileIcon(ext) {
+  return {txt:'📄',xlsx:'📊',xls:'📊',docx:'📝',doc:'📝',pdf:'📕',html:'🌐'}[ext.toLowerCase()] || '📁';
+}
+function formatSize(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+function baseName(name) { return name.replace(/\.[^.]+$/, ''); }
+function timestamp()    { return new Date().toISOString().slice(0,19).replace(/[T:]/g,'-'); }
+function esc(s)         { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escXml(s)      { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// 起動ログ
+logMsg('翻訳ウォッチャー Pro 起動', 'sec');
+logMsg('対応形式: TXT / Excel (.xlsx .xls) / Word (.docx .doc) / PDF (.pdf)', 'info');
+logMsg('ファイルをINPUTフォルダにドラッグして「翻訳開始」を押してください', 'ok');
+</script>
+</body>
+</html>
