@@ -150,6 +150,12 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
     <input type="checkbox" id="lang-zh" checked> 中国語
   </label>
   <div class="tb-sep"></div>
+  <span class="tb-label">PDF翻訳範囲</span>
+  <select class="tb-select" id="pdf-scope-sel" title="PDF内で翻訳対象にする枠を選択">
+    <option value="all">全体を翻訳</option>
+    <option value="slitter">スリッターの部の枠内だけ翻訳</option>
+  </select>
+  <div class="tb-sep"></div>
   <span class="tb-label">PDF文字色</span>
   <select class="tb-select" id="pdf-color-sel" title="PDF内で翻訳対象にする文字色を選択">
     <option value="all">全文字を翻訳</option>
@@ -583,6 +589,43 @@ function pdfColorModeLabel(mode) {
   return {all:'全文字', red:'赤文字のみ', black:'黒文字のみ'}[mode] || '全文字';
 }
 
+function getPdfScope() {
+  return document.getElementById('pdf-scope-sel').value; // all | slitter
+}
+
+function pdfScopeLabel(scope) {
+  return {all:'全体', slitter:'スリッターの部の枠内のみ'}[scope] || '全体';
+}
+
+// 空白（半角・全角）を除いた行テキスト。見出し判定・キーワード検索に使う
+function normalizeRowText(t) {
+  return t.replace(/[\s　]/g, '');
+}
+
+// 「◯◯の部」のような区画見出し行かどうか（帳票の各枠を区切るタイトル行）
+function isSectionHeaderRow(normText) {
+  return normText.length > 0 && normText.length <= 20 && /.+の部$/.test(normText);
+}
+
+// rows（ページ内の行、上→下の順）から、指定キーワードを含む見出しの区画範囲(Y座標)を求める。
+// 開始＝見出し行の上端、終了＝次の見出し行の上端（無ければページ末尾まで）。
+// 見つからなければ null（このページに該当区画が無い）。
+function findSectionScope(rows, keyword) {
+  const headerIdx = rows.findIndex(r => {
+    const n = normalizeRowText(r.text);
+    return n.length <= 20 && n.includes(keyword);
+  });
+  if (headerIdx === -1) return null;
+
+  const nextHeaderIdx = rows.findIndex((r, i) =>
+    i > headerIdx && isSectionHeaderRow(normalizeRowText(r.text)));
+
+  return {
+    yTop:    rows[headerIdx].box.y0 - 4, // 上の罫線ごと含めるよう少し余裕を持たせる
+    yBottom: nextHeaderIdx !== -1 ? rows[nextHeaderIdx].box.y0 - 1 : Infinity,
+  };
+}
+
 // キャンバス上のインク色から赤文字かどうかを判定
 function isRedInk([r, g, b]) {
   return r > 100 && (r - g) > 40 && (r - b) > 40;
@@ -658,10 +701,12 @@ async function trPdf(ab, lc, ln, label) {
   const pdf = await pdfjsLib.getDocument({data: new Uint8Array(ab)}).promise;
   const numPages  = pdf.numPages;
   const colorMode = getPdfColorMode();
-  logMsg(`   ${numPages} ページ（翻訳対象: ${pdfColorModeLabel(colorMode)}、レイアウトは維持したまま文字のみ変換）`, 'info');
+  const scope     = getPdfScope();
+  logMsg(`   ${numPages} ページ（翻訳範囲: ${pdfScopeLabel(scope)} / 翻訳対象: ${pdfColorModeLabel(colorMode)}、レイアウトは維持したまま文字のみ変換）`, 'info');
 
   const RENDER_SCALE = 2; // 画質確保のためのレンダリング倍率
   let anyMatched = false;
+  let anyScopeFound = false;
   let outPdf = null;
 
   for (let p = 1; p <= numPages; p++) {
@@ -679,11 +724,17 @@ async function trPdf(ab, lc, ln, label) {
     await page.render({canvasContext: ctx, viewport}).promise;
     const origImg = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
-    // 各行の文字色を判定し、選択モードに合う行だけを翻訳対象にする
+    // 「スリッターの部」など指定の枠内だけに絞る場合、対象区画のY範囲を求める
+    const sectionScope = scope === 'slitter' ? findSectionScope(rows, 'スリッター') : null;
+    if (scope === 'all' || sectionScope) anyScopeFound = true;
+
+    // 各行の文字色・区画範囲を判定し、条件に合う行だけを翻訳対象にする
     const targetRows = rows.filter(row => row.text.trim()).map(row => {
+      const inScope = scope === 'all' ||
+        (sectionScope && row.box.y0 >= sectionScope.yTop && row.box.y0 < sectionScope.yBottom);
       const red = isRedInk(sampleBoxColor(origImg, canvas.width, canvas.height, row.box));
-      const match = colorMode === 'all' || (colorMode === 'red' ? red : !red);
-      return {...row, red, match};
+      const colorOk = colorMode === 'all' || (colorMode === 'red' ? red : !red);
+      return {...row, red, match: inScope && colorOk};
     }).filter(row => row.match);
 
     if (targetRows.length) anyMatched = true;
@@ -744,10 +795,13 @@ async function trPdf(ab, lc, ln, label) {
     outPdf.addImage(imgData, 'JPEG', 0, 0, pw, ph);
   }
 
+  if (scope !== 'all' && !anyScopeFound) {
+    throw new Error(`「${pdfScopeLabel(scope)}」の見出しが見つかりません`);
+  }
   if (!anyMatched) {
     throw new Error(colorMode === 'all'
       ? 'テキストが抽出できません（スキャンPDF・画像PDFは非対応）'
-      : `「${pdfColorModeLabel(colorMode)}」に該当する文字が見つかりません`);
+      : `「${pdfScopeLabel(scope)}」の範囲内に「${pdfColorModeLabel(colorMode)}」に該当する文字が見つかりません`);
   }
 
   return outPdf.output('blob');
