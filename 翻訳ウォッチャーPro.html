@@ -434,7 +434,7 @@ async function translateFile(item, langCode, langName) {
   if (ext === 'txt')                   return {blob: await trTxt(ab, langCode, langName, label),   outExt: 'txt'};
   if (ext === 'xlsx' || ext === 'xls') return {blob: await trExcel(ab, langCode, langName, ext, label), outExt: ext};
   if (ext === 'docx' || ext === 'doc') return {blob: await trWord(ab, langCode, langName, label),  outExt: ext};
-  if (ext === 'pdf')                   return {blob: await trPdf(ab, langCode, langName, label),   outExt: 'html'};
+  if (ext === 'pdf')                   return {blob: await trPdf(ab, langCode, langName, label),   outExt: 'pdf'};
   throw new Error('非対応形式');
 }
 
@@ -562,8 +562,9 @@ async function trWord(ab, lc, ln, label) {
   return zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
 }
 
-// ── PDF翻訳（PDF.js + 対訳HTML出力）────────────────
+// ── PDF翻訳（PDF.js でレイアウトを維持したまま文字だけ差し替え → PDF出力）────
 const PDFJS_BASE = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/';
+const JSPDF_URL  = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -587,17 +588,22 @@ function isRedInk([r, g, b]) {
   return r > 100 && (r - g) > 40 && (r - b) > 40;
 }
 
-// テキスト項目の位置にあるインク色をサンプリング（背景の白は無視し、最も濃い画素を採用）
-function sampleItemColor(imgData, cw, ch, item, viewport) {
-  const w = item.width  || 4;
-  const h = item.height || Math.abs(item.transform[0]) || 8;
-  const x0p = item.transform[4], y0p = item.transform[5];
+// ページ座標(pt)の矩形をビューポート(canvas px)座標へ変換した外接矩形を返す
+function toViewportBox(viewport, x0p, y0p, x1p, y1p) {
   const [vx0, vy0] = viewport.convertToViewportPoint(x0p, y0p);
-  const [vx1, vy1] = viewport.convertToViewportPoint(x0p + w, y0p + h);
-  const minX = Math.max(0, Math.floor(Math.min(vx0, vx1)));
-  const maxX = Math.min(cw - 1, Math.ceil(Math.max(vx0, vx1)));
-  const minY = Math.max(0, Math.floor(Math.min(vy0, vy1)));
-  const maxY = Math.min(ch - 1, Math.ceil(Math.max(vy0, vy1)));
+  const [vx1, vy1] = viewport.convertToViewportPoint(x1p, y1p);
+  return {
+    x0: Math.min(vx0, vx1), x1: Math.max(vx0, vx1),
+    y0: Math.min(vy0, vy1), y1: Math.max(vy0, vy1),
+  };
+}
+
+// テキスト項目群のインク色をサンプリング（背景の白は無視し、最も濃い画素を採用）
+function sampleBoxColor(imgData, cw, ch, box) {
+  const minX = Math.max(0, Math.floor(box.x0));
+  const maxX = Math.min(cw - 1, Math.ceil(box.x1));
+  const minY = Math.max(0, Math.floor(box.y0));
+  const maxY = Math.min(ch - 1, Math.ceil(box.y1));
 
   let best = null, bestDark = -1;
   for (let yy = minY; yy <= maxY; yy++) {
@@ -611,124 +617,130 @@ function sampleItemColor(imgData, cw, ch, item, viewport) {
   return best || [0, 0, 0];
 }
 
+// テキスト項目をY座標（行）でグループ化し、行ごとの原文・外接矩形・ベースラインを求める
+function buildRows(items, viewport) {
+  const groups = new Map();
+  for (const item of items) {
+    if (!item.str.trim()) continue;
+    const y = Math.round(item.transform[5]);
+    if (!groups.has(y)) groups.set(y, []);
+    groups.get(y).push(item);
+  }
+
+  return [...groups.entries()]
+    .sort((a, b) => b[0] - a[0]) // Y降順（PDF座標は下から上なので上→下の順になる）
+    .map(([, its]) => {
+      its.sort((a, b) => a.transform[4] - b.transform[4]);
+      const text = its.map(i => i.str).join('');
+      const x0p = Math.min(...its.map(i => i.transform[4]));
+      const x1p = Math.max(...its.map(i => i.transform[4] + (i.width || 0)));
+      const y0p = its[0].transform[5]; // ベースライン
+      const h   = Math.max(...its.map(i => i.height || Math.abs(i.transform[3]) || 8));
+      const box = toViewportBox(viewport, x0p, y0p - h * 0.22, x1p, y0p + h * 0.85);
+      const baseline = viewport.convertToViewportPoint(x0p, y0p);
+      return {text, box, baselineX: baseline[0], baselineY: baseline[1], fontSizePx: box.y1 - box.y0};
+    });
+}
+
 async function trPdf(ab, lc, ln, label) {
-  // PDF.js を初回のみ動的ロード
+  // PDF.js / jsPDF を初回のみ動的ロード
   if (!window.pdfjsLib) {
     logMsg('PDF.js を読み込み中...', 'info');
     await loadScript(PDFJS_BASE + 'pdf.min.js');
     pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js';
   }
+  if (!window.jspdf) {
+    logMsg('jsPDF を読み込み中...', 'info');
+    await loadScript(JSPDF_URL);
+  }
+  const { jsPDF } = window.jspdf;
 
   const pdf = await pdfjsLib.getDocument({data: new Uint8Array(ab)}).promise;
   const numPages  = pdf.numPages;
   const colorMode = getPdfColorMode();
-  logMsg(`   ${numPages} ページ（翻訳対象: ${pdfColorModeLabel(colorMode)}）`, 'info');
+  logMsg(`   ${numPages} ページ（翻訳対象: ${pdfColorModeLabel(colorMode)}、レイアウトは維持したまま文字のみ変換）`, 'info');
 
-  // ── ページごとにテキスト抽出 ──
-  const pageTexts = [];
+  const RENDER_SCALE = 2; // 画質確保のためのレンダリング倍率
+  let anyMatched = false;
+  let outPdf = null;
+
   for (let p = 1; p <= numPages; p++) {
-    const page    = await pdf.getPage(p);
-    const content = await page.getTextContent();
-    let items = content.items.filter(it => it.str.trim());
+    if (cancelRequested) break;
+    const page     = await pdf.getPage(p);
+    const content  = await page.getTextContent();
+    const viewport = page.getViewport({scale: RENDER_SCALE});
+    const rows     = buildRows(content.items, viewport);
 
-    // 文字色で絞り込む場合は、ページをレンダリングして各文字位置のインク色を判定
-    if (colorMode !== 'all' && items.length) {
-      const viewport = page.getViewport({scale: 2});
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      const ctx = canvas.getContext('2d', {willReadFrequently: true});
-      await page.render({canvasContext: ctx, viewport}).promise;
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    // ページをそのままレンダリング（レイアウト・画像・図表はここで保持される）
+    const canvas = document.createElement('canvas');
+    canvas.width  = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext('2d', {willReadFrequently: true});
+    await page.render({canvasContext: ctx, viewport}).promise;
+    const origImg = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
-      items = items.filter(item => {
-        const red = isRedInk(sampleItemColor(imgData, canvas.width, canvas.height, item, viewport));
-        return colorMode === 'red' ? red : !red;
-      });
+    // 各行の文字色を判定し、選択モードに合う行だけを翻訳対象にする
+    const targetRows = rows.filter(row => row.text.trim()).map(row => {
+      const red = isRedInk(sampleBoxColor(origImg, canvas.width, canvas.height, row.box));
+      const match = colorMode === 'all' || (colorMode === 'red' ? red : !red);
+      return {...row, red, match};
+    }).filter(row => row.match);
+
+    if (targetRows.length) anyMatched = true;
+
+    // 対象行をまとめて翻訳
+    if (targetRows.length) {
+      const texts = targetRows.map(r => r.text);
+      const tl = await batchTranslate(
+        texts, lc, ln,
+        (d, t) => prog.update(p - 1 + d / t, numPages,
+          `<b>${label}</b><br>ページ ${p}/${numPages} — 行 ${d}/${t}`)
+      );
+      targetRows.forEach((row, i) => { row.translated = tl[i] ?? row.text; });
+    } else {
+      prog.update(p, numPages, `<b>${label}</b><br>ページ ${p}/${numPages}（対象文字なし）`);
     }
 
-    // Y座標でグループ化して行を復元（PDF座標は下から上）
-    const rows = new Map();
-    for (const item of items) {
-      const y = Math.round(item.transform[5]);
-      if (!rows.has(y)) rows.set(y, []);
-      rows.get(y).push({x: item.transform[4], str: item.str});
+    // 対象行だけ元の文字を白で消し、同じ位置・同系色に翻訳文を描き直す（レイアウトは変更しない）
+    for (const row of targetRows) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(row.box.x0 - 1, row.box.y0 - 1,
+        (row.box.x1 - row.box.x0) + 2, (row.box.y1 - row.box.y0) + 2);
+
+      ctx.fillStyle = row.red ? 'rgb(200,30,30)' : '#000000';
+      ctx.textBaseline = 'alphabetic';
+      const boxWidth = row.box.x1 - row.box.x0;
+      let fontSize = Math.max(6, row.fontSizePx);
+      let width;
+      do {
+        ctx.font = `${fontSize}px sans-serif`;
+        width = ctx.measureText(row.translated).width;
+        if (width <= boxWidth || fontSize <= 6) break;
+        fontSize -= 1;
+      } while (true);
+      ctx.fillText(row.translated, row.baselineX, row.baselineY);
     }
-    const lines = [...rows.entries()]
-      .sort((a, b) => b[0] - a[0])          // Y降順（上→下）
-      .map(([, its]) =>
-        its.sort((a, b) => a.x - b.x).map(i => i.str).join(''));
-    pageTexts.push(lines.join('\n'));
+
+    // ページ画像を出力PDFへ追加（元のページ寸法のまま＝レイアウト維持）
+    const pw = viewport.width  / RENDER_SCALE;
+    const ph = viewport.height / RENDER_SCALE;
+    const orientation = pw > ph ? 'landscape' : 'portrait';
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    if (!outPdf) {
+      outPdf = new jsPDF({unit: 'pt', format: [pw, ph], orientation});
+    } else {
+      outPdf.addPage([pw, ph], orientation);
+    }
+    outPdf.addImage(imgData, 'JPEG', 0, 0, pw, ph);
   }
 
-  const hasText = pageTexts.some(t => t.trim());
-  if (!hasText) {
+  if (!anyMatched) {
     throw new Error(colorMode === 'all'
       ? 'テキストが抽出できません（スキャンPDF・画像PDFは非対応）'
       : `「${pdfColorModeLabel(colorMode)}」に該当する文字が見つかりません`);
   }
 
-  // ── ページ単位でバッチ翻訳 ──
-  const translatedPages = [];
-  for (let i = 0; i < pageTexts.length; i++) {
-    if (cancelRequested) break;
-    const pageLines = pageTexts[i].split('\n').filter(l => l.trim());
-    if (!pageLines.length) { translatedPages.push(''); continue; }
-
-    prog.update(i, numPages, `<b>${label}</b><br>ページ ${i+1}/${numPages} を翻訳中`);
-    const tl = await batchTranslate(
-      pageLines, lc, ln,
-      (d, t) => prog.update(i + d/t, numPages,
-        `<b>${label}</b><br>ページ ${i+1}/${numPages} — 行 ${d}/${t}`)
-    );
-    translatedPages.push(tl.join('\n'));
-  }
-
-  return new Blob([buildPdfHtml(pageTexts, translatedPages, label, ln, numPages)],
-    {type: 'text/html;charset=utf-8'});
-}
-
-function buildPdfHtml(origPages, transPages, label, langName, numPages) {
-  const pages = origPages.map((orig, i) => `
-  <div class="page">
-    <div class="ph">ページ ${i + 1} / ${numPages}</div>
-    <div class="grid">
-      <div class="col">
-        <div class="clabel">🇯🇵 日本語（原文）</div>
-        <div class="body">${esc(orig).replace(/\n/g,'<br>')}</div>
-      </div>
-      <div class="col">
-        <div class="clabel">🌐 ${esc(langName)}</div>
-        <div class="body">${esc(transPages[i]||'').replace(/\n/g,'<br>')}</div>
-      </div>
-    </div>
-  </div>`).join('');
-
-  return `<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
-<title>${esc(label)}</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;background:#f0f2f5;padding:16px}
-.toolbar{background:#1a1a2e;color:#fff;padding:12px 20px;border-radius:8px;margin-bottom:16px;display:flex;align-items:center;gap:16px}
-.toolbar strong{font-size:15px}.toolbar span{font-size:12px;opacity:.7;flex:1}
-.print-btn{background:#16a34a;color:#fff;border:none;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700}
-.page{background:#fff;border-radius:8px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.1)}
-.ph{background:#1e3a5f;color:#fff;padding:6px 16px;font-size:11px;font-weight:700;letter-spacing:.04em}
-.grid{display:grid;grid-template-columns:1fr 1fr}
-.col{padding:14px 16px;border-right:1px solid #e2e8f0}
-.col:last-child{border-right:none}
-.clabel{font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:6px;letter-spacing:.06em}
-.body{font-size:13px;line-height:1.9;color:#1e293b}
-@media print{.toolbar{display:none}body{background:#fff;padding:0}.page{box-shadow:none;border:1px solid #ddd;margin-bottom:8px}.grid{grid-template-columns:1fr 1fr}}
-</style></head><body>
-<div class="toolbar">
-  <strong>📄 翻訳ウォッチャー Pro</strong>
-  <span>${esc(label)}</span>
-  <button class="print-btn" onclick="window.print()">🖨 印刷</button>
-</div>
-${pages}
-</body></html>`;
+  return outPdf.output('blob');
 }
 
 // ── 翻訳エンジン（単体）──────────────────────────
