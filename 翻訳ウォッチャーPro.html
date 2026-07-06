@@ -150,12 +150,6 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
     <input type="checkbox" id="lang-zh" checked> 中国語
   </label>
   <div class="tb-sep"></div>
-  <span class="tb-label">PDF翻訳範囲</span>
-  <select class="tb-select" id="pdf-scope-sel" title="PDF内で翻訳対象にするページ範囲を選択">
-    <option value="all">全体を翻訳</option>
-    <option value="slitter">スリッターの部だけ翻訳</option>
-  </select>
-  <div class="tb-sep"></div>
   <span class="tb-label">PDF文字色</span>
   <select class="tb-select" id="pdf-color-sel" title="PDF内で翻訳対象にする文字色を選択">
     <option value="all">全文字を翻訳</option>
@@ -589,19 +583,6 @@ function pdfColorModeLabel(mode) {
   return {all:'全文字', red:'赤文字のみ', black:'黒文字のみ'}[mode] || '全文字';
 }
 
-function getPdfScope() {
-  return document.getElementById('pdf-scope-sel').value; // all | slitter
-}
-
-function pdfScopeLabel(scope) {
-  return {all:'全体', slitter:'スリッターの部のみ'}[scope] || '全体';
-}
-
-// ページ内テキストに「スリッター」が含まれるか（スリッター区間のページ判定に使用）
-function pageIsSlitterSection(pageText) {
-  return pageText.includes('スリッター');
-}
-
 // キャンバス上のインク色から赤文字かどうかを判定
 function isRedInk([r, g, b]) {
   return r > 100 && (r - g) > 40 && (r - b) > 40;
@@ -677,12 +658,10 @@ async function trPdf(ab, lc, ln, label) {
   const pdf = await pdfjsLib.getDocument({data: new Uint8Array(ab)}).promise;
   const numPages  = pdf.numPages;
   const colorMode = getPdfColorMode();
-  const scope     = getPdfScope();
-  logMsg(`   ${numPages} ページ（翻訳範囲: ${pdfScopeLabel(scope)} / 翻訳対象: ${pdfColorModeLabel(colorMode)}、レイアウトは維持したまま文字のみ変換）`, 'info');
+  logMsg(`   ${numPages} ページ（翻訳対象: ${pdfColorModeLabel(colorMode)}、レイアウトは維持したまま文字のみ変換）`, 'info');
 
   const RENDER_SCALE = 2; // 画質確保のためのレンダリング倍率
   let anyMatched = false;
-  let anyScopePage = false;
   let outPdf = null;
 
   for (let p = 1; p <= numPages; p++) {
@@ -700,17 +679,12 @@ async function trPdf(ab, lc, ln, label) {
     await page.render({canvasContext: ctx, viewport}).promise;
     const origImg = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
-    // 翻訳範囲（スリッターの部のみ等）に該当しないページは元のまま何も変更しない
-    const pageText = content.items.map(i => i.str).join('');
-    const inScope  = scope === 'all' || pageIsSlitterSection(pageText);
-    if (inScope) anyScopePage = true;
-
     // 各行の文字色を判定し、選択モードに合う行だけを翻訳対象にする
-    const targetRows = inScope ? rows.filter(row => row.text.trim()).map(row => {
+    const targetRows = rows.filter(row => row.text.trim()).map(row => {
       const red = isRedInk(sampleBoxColor(origImg, canvas.width, canvas.height, row.box));
       const match = colorMode === 'all' || (colorMode === 'red' ? red : !red);
       return {...row, red, match};
-    }).filter(row => row.match) : [];
+    }).filter(row => row.match);
 
     if (targetRows.length) anyMatched = true;
 
@@ -724,8 +698,7 @@ async function trPdf(ab, lc, ln, label) {
       );
       targetRows.forEach((row, i) => { row.translated = tl[i] ?? row.text; });
     } else {
-      const reason = !inScope ? '範囲外のページ' : '対象文字なし';
-      prog.update(p, numPages, `<b>${label}</b><br>ページ ${p}/${numPages}（${reason}）`);
+      prog.update(p, numPages, `<b>${label}</b><br>ページ ${p}/${numPages}（対象文字なし）`);
     }
 
     // 対象行だけ元の文字を白で消し、同じ位置・同系色に翻訳文を枠に収まるサイズで描き直す（レイアウトは変更しない）
@@ -771,13 +744,10 @@ async function trPdf(ab, lc, ln, label) {
     outPdf.addImage(imgData, 'JPEG', 0, 0, pw, ph);
   }
 
-  if (scope !== 'all' && !anyScopePage) {
-    throw new Error(`「${pdfScopeLabel(scope)}」に該当するページが見つかりません`);
-  }
   if (!anyMatched) {
     throw new Error(colorMode === 'all'
       ? 'テキストが抽出できません（スキャンPDF・画像PDFは非対応）'
-      : `「${pdfScopeLabel(scope)}」の範囲内に「${pdfColorModeLabel(colorMode)}」に該当する文字が見つかりません`);
+      : `「${pdfColorModeLabel(colorMode)}」に該当する文字が見つかりません`);
   }
 
   return outPdf.output('blob');
