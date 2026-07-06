@@ -611,12 +611,15 @@ function isSectionHeaderRow(normText) {
 // 開始＝見出し行の上端、終了＝次の見出し行の上端（無ければページ末尾まで）。
 // 見つからなければ null（このページに該当区画が無い）。
 function findSectionScope(rows, keyword) {
+  // 「◯◯の部」という区画見出し行そのものだけを対象にする。
+  // 単にキーワードを含む行（ページタイトルの注記等）を拾わないようにするため。
   const headerIdx = rows.findIndex(r => {
     const n = normalizeRowText(r.text);
-    return n.length <= 20 && n.includes(keyword);
+    return n.includes(keyword) && isSectionHeaderRow(n);
   });
   if (headerIdx === -1) return null;
 
+  // 次の「◯◯の部」見出し行の直前までを区画とする（無ければページ末尾まで）
   const nextHeaderIdx = rows.findIndex((r, i) =>
     i > headerIdx && isSectionHeaderRow(normalizeRowText(r.text)));
 
