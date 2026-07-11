@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>翻訳ウォッチャー Pro</title>
+<style>
+:root{
+  --red:#dc2626; --red-dark:#b91c1c; --ink:#1e293b; --sub:#64748b;
+  --bg:#f8fafc; --card:#ffffff; --border:#e2e8f0; --accent:#7c3aed;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:"Hiragino Kaku Gothic ProN","Yu Gothic UI",sans-serif;
+  background:var(--bg); color:var(--ink); line-height:1.7;
+}
+.hero{
+  background:linear-gradient(135deg,#1a1a2e,#2d2d4e);
+  color:#fff; padding:72px 24px 64px; text-align:center;
+}
+.hero .badge{
+  display:inline-block; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.25);
+  border-radius:999px; padding:4px 16px; font-size:12px; letter-spacing:.08em; margin-bottom:20px;
+}
+.hero h1{font-size:clamp(28px,5vw,44px); font-weight:800; margin-bottom:12px}
+.hero h1 span{color:#60a5fa}
+.hero p{font-size:16px; color:#cbd5e1; max-width:640px; margin:0 auto 32px}
+.hero .cta{display:flex; gap:12px; justify-content:center; flex-wrap:wrap}
+.btn{
+  display:inline-flex; align-items:center; gap:8px; padding:13px 26px; border-radius:10px;
+  font-weight:700; font-size:15px; text-decoration:none; transition:transform .15s,box-shadow .15s;
+}
+.btn:hover{transform:translateY(-2px)}
+.btn-primary{background:var(--red); color:#fff; box-shadow:0 8px 24px rgba(220,38,38,.35)}
+.btn-primary:hover{background:var(--red-dark)}
+.btn-ghost{background:rgba(255,255,255,.1); color:#fff; border:1px solid rgba(255,255,255,.3)}
+
+.wrap{max-width:1000px; margin:0 auto; padding:64px 24px}
+.section-title{font-size:26px; font-weight:800; margin-bottom:8px}
+.section-sub{color:var(--sub); margin-bottom:36px}
+
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px}
+.card{
+  background:var(--card); border:1px solid var(--border); border-radius:16px; padding:26px;
+  box-shadow:0 1px 3px rgba(0,0,0,.04);
+}
+.card .icon{font-size:28px; margin-bottom:12px}
+.card h3{font-size:16px; font-weight:700; margin-bottom:8px}
+.card p{font-size:13.5px; color:var(--sub)}
+
+.formats{display:flex; gap:10px; flex-wrap:wrap; margin-top:8px}
+.chip{background:#fef2f2; color:var(--red-dark); font-size:12px; font-weight:700; padding:5px 12px; border-radius:999px}
+
+.split{display:grid; grid-template-columns:1fr 1fr; gap:24px}
+@media(max-width:720px){.split{grid-template-columns:1fr}}
+.editionCard{
+  background:var(--card); border:1px solid var(--border); border-radius:16px; padding:28px;
+  display:flex; flex-direction:column; gap:14px;
+}
+.editionCard h3{font-size:18px}
+.editionCard ul{padding-left:20px; color:var(--sub); font-size:13.5px}
+.editionCard ul li{margin-bottom:4px}
+.editionCard .btn{align-self:flex-start; margin-top:auto}
+
+.steps{counter-reset:step}
+.step{display:flex; gap:16px; margin-bottom:22px}
+.step .num{
+  flex-shrink:0; width:32px; height:32px; border-radius:50%; background:var(--red); color:#fff;
+  display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px;
+}
+.step h4{font-size:15px; margin-bottom:4px}
+.step p{font-size:13.5px; color:var(--sub)}
+
+footer{
+  text-align:center; padding:40px 24px; color:var(--sub); font-size:12.5px;
+  border-top:1px solid var(--border);
+}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="badge">📄 ブラウザで動く多言語翻訳ツール</div>
+  <h1>翻訳ウォッチャー <span>Pro</span></h1>
+  <p>TXT・Excel・Word・PDF をそのまま多言語に翻訳。<br>
+     PDFはレイアウトを崩さず、文字だけをその場で差し替えます。</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="翻訳ウォッチャーPro.html">▶ アプリを開く（インストール不要）</a>
+    <a class="btn btn-ghost" href="翻訳ウォッチャーPro_Web版.zip">⬇ Windowsサーバー版をダウンロード</a>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="section-title">できること</div>
+  <div class="section-sub">対応形式
+    <span class="formats">
+      <span class="chip">TXT</span><span class="chip">Excel (.xlsx/.xls)</span>
+      <span class="chip">Word (.docx/.doc)</span><span class="chip">PDF</span>
+    </span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="icon">🗂️</div>
+      <h3>ドラッグ&ドロップで一括翻訳</h3>
+      <p>複数ファイル・複数言語（ベトナム語／中国語 など）をまとめて翻訳し、個別ダウンロードもZIP一括ダウンロードも可能。</p>
+    </div>
+    <div class="card">
+      <div class="icon">📐</div>
+      <h3>PDFはレイアウトを維持</h3>
+      <p>元のページをそのまま画像として保持し、対象の文字だけを同じ位置・同じ色で翻訳文に差し替え。表や罫線、レイアウトは崩れません。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🎨</div>
+      <h3>文字色で翻訳対象を指定</h3>
+      <p>「赤文字のみ」「黒文字のみ」「全文字」から選択可能。手書き注記や強調箇所だけを狙って翻訳できます。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🌐</div>
+      <h3>Google翻訳 / ローカルLLM</h3>
+      <p>Google翻訳を使った高速翻訳のほか、Ollama等のローカルLLMにも対応。社内データを外部に出したくない場合にも。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🖥️</div>
+      <h3>Windowsサーバー版もあり</h3>
+      <p>デスクトップにINPUT/OUTPUTフォルダを自動作成し、フォルダ経由での自動翻訳ワークフローに対応（Python標準機能のみ・追加インストール不要）。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔒</div>
+      <h3>インストール不要・無料</h3>
+      <p>ブラウザ版はアプリを開くだけで動作。サーバーへのアップロードも不要で、処理はすべてブラウザ内で完結します。</p>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" style="padding-top:0">
+  <div class="section-title">使い方</div>
+  <div class="section-sub">3ステップで完了します</div>
+  <div class="steps">
+    <div class="step">
+      <div class="num">1</div>
+      <div><h4>ファイルを追加</h4><p>画面にファイルをドラッグ&ドロップ、またはクリックして選択します。</p></div>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <div><h4>言語・オプションを選択</h4><p>翻訳先の言語や、PDFの文字色フィルタなど必要な設定を選びます。</p></div>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <div><h4>翻訳開始 → ダウンロード</h4><p>「▶ 翻訳開始」を押すと処理が始まり、完了後にダウンロードできます。</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" style="padding-top:0">
+  <div class="section-title">2つのバージョン</div>
+  <div class="section-sub">用途に合わせてお選びください</div>
+  <div class="split">
+    <div class="editionCard">
+      <h3>🌐 ブラウザ版</h3>
+      <ul>
+        <li>ダブルクリックせず、リンクを開くだけで起動</li>
+        <li>ドラッグ&ドロップでファイルを追加</li>
+        <li>個人利用・単発の翻訳作業向け</li>
+      </ul>
+      <a class="btn btn-primary" href="翻訳ウォッチャーPro.html">▶ 今すぐ開く</a>
+    </div>
+    <div class="editionCard">
+      <h3>🖥️ Windowsサーバー版</h3>
+      <ul>
+        <li>Python 3があればそのまま動作（追加インストール不要）</li>
+        <li>デスクトップにINPUT/OUTPUTフォルダを自動作成</li>
+        <li>フォルダ運用・チーム利用向け</li>
+      </ul>
+      <a class="btn btn-primary" href="翻訳ウォッチャーPro_Web版.zip">⬇ ZIPをダウンロード</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  翻訳ウォッチャー Pro — ブラウザで完結する多言語翻訳ツール
+</footer>
+
+</body>
+</html>
