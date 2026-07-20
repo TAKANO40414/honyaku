@@ -119,15 +119,28 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
 ::-webkit-scrollbar-track{background:#f1f5f9}
 ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 
-/* 設定モーダル */
+/* モーダル共通 */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
-.modal{background:#fff;border-radius:12px;width:440px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal{background:#fff;border-radius:12px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .modal h2{font-size:16px;font-weight:700;color:#1e293b;margin-bottom:16px}
 .modal label{display:block;font-size:12px;color:#64748b;margin:10px 0 4px;font-weight:600}
 .modal input,.modal select{width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none}
 .modal input:focus,.modal select:focus{border-color:#2563eb}
 .modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+
+/* 辞書モーダル */
+#dict-modal .modal{width:680px;max-width:96vw;max-height:85vh;display:flex;flex-direction:column}
+.dict-table-wrap{flex:1;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px}
+.dict-table{width:100%;border-collapse:collapse;font-size:13px}
+.dict-table th{background:#f8fafc;padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:#64748b;border-bottom:2px solid #e2e8f0;position:sticky;top:0}
+.dict-table td{padding:5px 6px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.dict-table td input{width:100%;padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;outline:none}
+.dict-table td input:focus{border-color:#2563eb}
+.dict-table tr:hover td{background:#f8fafc}
+.dict-del{background:none;border:none;color:#cbd5e1;font-size:15px;cursor:pointer;padding:2px 6px;border-radius:4px}
+.dict-del:hover{color:#dc2626;background:#fff1f2}
+.dict-hint{font-size:11px;color:#94a3b8;margin-bottom:8px;line-height:1.6}
 </style>
 </head>
 <body>
@@ -160,6 +173,7 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
   <button class="tb-btn green" id="translate-btn" onclick="startTranslation()">▶  翻訳開始</button>
   <button class="tb-btn" onclick="clearAll()">🗑  クリア</button>
   <button class="tb-btn gray" onclick="downloadAll()">⬇  全ダウンロード (ZIP)</button>
+  <button class="tb-btn" style="background:#7c3aed" onclick="openDict()">📖  専門用語辞書</button>
   <button class="tb-btn gray" onclick="openSettings()">⚙  設定</button>
   <div class="spacer"></div>
   <div class="stat-chip">合計 <b id="st-total">0</b></div>
@@ -253,6 +267,40 @@ body{font-family:"Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif;backgroun
     </div>
     <div class="pc-item-bar" id="po-item">待機中...</div>
     <button class="pc-cancel" onclick="cancelTranslation()">⏹ キャンセル</button>
+  </div>
+</div>
+
+<!-- ── 専門用語辞書モーダル ── -->
+<div class="modal-overlay" id="dict-modal">
+  <div class="modal">
+    <h2>📖 専門用語辞書</h2>
+    <p class="dict-hint">
+      登録した日本語は翻訳前に自動で正しい訳語に置換されます。<br>
+      製造業の専門用語・社内固有の表現を登録してください。
+    </p>
+    <div class="dict-table-wrap">
+      <table class="dict-table">
+        <thead>
+          <tr>
+            <th style="width:34%">🇯🇵 日本語（原文）</th>
+            <th style="width:30%">🇻🇳 ベトナム語</th>
+            <th style="width:30%">🇨🇳 中国語</th>
+            <th style="width:6%"></th>
+          </tr>
+        </thead>
+        <tbody id="dict-tbody"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:4px">
+      <button class="tb-btn green" style="font-size:12px;padding:6px 14px" onclick="dictAddRow()">＋ 行を追加</button>
+      <button class="tb-btn gray"  style="font-size:12px;padding:6px 14px" onclick="dictImport()">⬆ CSVインポート</button>
+      <button class="tb-btn gray"  style="font-size:12px;padding:6px 14px" onclick="dictExport()">⬇ CSVエクスポート</button>
+      <input type="file" id="dict-csv-input" accept=".csv" style="display:none" onchange="dictCsvLoad(event)">
+    </div>
+    <div class="modal-btns">
+      <button class="tb-btn gray" onclick="closeDict()">キャンセル</button>
+      <button class="tb-btn green" onclick="saveDict()">💾 保存</button>
+    </div>
   </div>
 </div>
 
@@ -438,9 +486,9 @@ async function translateFile(item, langCode, langName) {
   throw new Error('非対応形式');
 }
 
-// ── バッチ翻訳コア（Google・30件まとめて送信）────
+// ── バッチ翻訳コア（Google・30件まとめて送信）────（辞書ラッパーから呼ばれる）
 // テキスト配列を受け取り翻訳済み配列を返す
-async function batchTranslate(texts, lc, ln, onProgress) {
+async function _batchTranslateCore(texts, lc, ln, onProgress) {
   const engine = document.getElementById('engine-sel').value;
   if (engine !== 'google') {
     // LLMは1件ずつ
@@ -819,7 +867,7 @@ async function trLLM(text, ln) {
   const url   = (localStorage.getItem('llm_url') || 'http://localhost:11434').replace(/\/$/,'');
   const model = localStorage.getItem('llm_model') || 'llama3.2';
   const api   = localStorage.getItem('llm_api')   || 'ollama';
-  const prompt = `以下の日本語テキストを${ln}に翻訳してください。翻訳文のみ返してください。\n\n${text}`;
+  const prompt = `あなたは製造業専門の翻訳家です。日本の工場で使われる作業手順書・検査指示書・チェックリストを${ln}に翻訳してください。製造業の標準的な表現を使い、翻訳文のみを返してください。\n\n原文：\n${text}\n\n翻訳：`;
   try {
     if (api === 'openai') {
       const res = await fetch(`${url}/v1/chat/completions`, {
@@ -968,6 +1016,123 @@ function baseName(name) { return name.replace(/\.[^.]+$/, ''); }
 function timestamp()    { return new Date().toISOString().slice(0,19).replace(/[T:]/g,'-'); }
 function esc(s)         { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escXml(s)      { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── 専門用語辞書 ──────────────────────────────────
+// エントリ形式: {ja, vi, zh}
+let glossary = [];
+
+function loadGlossary() {
+  try { glossary = JSON.parse(localStorage.getItem('glossary') || '[]'); } catch { glossary = []; }
+}
+
+function saveDict() {
+  const rows = document.querySelectorAll('#dict-tbody tr');
+  glossary = [...rows].map(r => ({
+    ja: r.querySelector('.g-ja').value.trim(),
+    vi: r.querySelector('.g-vi').value.trim(),
+    zh: r.querySelector('.g-zh').value.trim(),
+  })).filter(e => e.ja);
+  localStorage.setItem('glossary', JSON.stringify(glossary));
+  logMsg(`辞書を保存しました（${glossary.length} 件）`, 'ok');
+  closeDict();
+}
+
+function openDict() {
+  loadGlossary();
+  renderDictTable();
+  document.getElementById('dict-modal').classList.add('open');
+}
+function closeDict() { document.getElementById('dict-modal').classList.remove('open'); }
+
+function renderDictTable() {
+  const tbody = document.getElementById('dict-tbody');
+  tbody.innerHTML = '';
+  (glossary.length ? glossary : []).forEach((e, i) => dictAddRow(e));
+}
+
+function dictAddRow(e = {}) {
+  const tbody = document.getElementById('dict-tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input class="g-ja" placeholder="例：検品" value="${esc(e.ja||'')}"></td>
+    <td><input class="g-vi" placeholder="例：kiểm tra" value="${esc(e.vi||'')}"></td>
+    <td><input class="g-zh" placeholder="例：检查" value="${esc(e.zh||'')}"></td>
+    <td><button class="dict-del" onclick="this.closest('tr').remove()">✕</button></td>`;
+  tbody.appendChild(tr);
+  if (!e.ja) tr.querySelector('.g-ja').focus();
+}
+
+function dictExport() {
+  const rows = document.querySelectorAll('#dict-tbody tr');
+  const lines = ['日本語,ベトナム語,中国語',
+    ...[...rows].map(r =>
+      [r.querySelector('.g-ja').value,
+       r.querySelector('.g-vi').value,
+       r.querySelector('.g-zh').value].map(v => `"${v.replace(/"/g,'""')}"`).join(','))];
+  const blob = new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = '専門用語辞書.csv'; a.click();
+}
+function dictImport() { document.getElementById('dict-csv-input').click(); }
+function dictCsvLoad(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const lines = ev.target.result.replace(/^﻿/,'').split(/\r?\n/).slice(1);
+    document.getElementById('dict-tbody').innerHTML = '';
+    lines.forEach(line => {
+      const cols = line.match(/("(?:[^"]|"")*"|[^,]*)/g)?.map(v=>v.replace(/^"|"$/g,'').replace(/""/g,'"')) || [];
+      if (cols[0]?.trim()) dictAddRow({ja:cols[0]||'',vi:cols[1]||'',zh:cols[2]||''});
+    });
+  };
+  reader.readAsText(file, 'utf-8');
+  e.target.value = '';
+}
+
+// ── 辞書適用（翻訳前後の置換）────────────────────
+// Unicode私用領域マーカー: 翻訳APIが変更しない文字を使用
+const PUA_BASE = 0xE100;
+
+function glossaryPre(text, langCode) {
+  if (!glossary.length) return {text, map: []};
+  const map = [];
+  let result = text;
+  glossary.forEach((entry, i) => {
+    if (!entry.ja || !result.includes(entry.ja)) return;
+    const target = langCode === 'vi' ? entry.vi : entry.zh;
+    if (!target) return;
+    const marker = String.fromCodePoint(PUA_BASE + i);
+    result = result.split(entry.ja).join(marker);
+    map.push({marker, target});
+  });
+  return {text: result, map};
+}
+
+function glossaryPost(text, map) {
+  if (!map.length) return text;
+  let result = text;
+  map.forEach(({marker, target}) => {
+    // マーカーとその前後の空白を対処
+    result = result.split(marker).join(target);
+  });
+  return result;
+}
+
+// ── 辞書適用済みバッチ翻訳（全翻訳の入口）──────────
+async function batchTranslate(texts, lc, ln, onProgress) {
+  loadGlossary();
+  if (!glossary.length) return _batchTranslateCore(texts, lc, ln, onProgress);
+
+  // プリ処理：専門用語をPUAマーカーに置換
+  const preMaps = texts.map(t => glossaryPre(t, lc));
+  const preTexts = preMaps.map(p => p.text);
+
+  // 翻訳
+  const results = await _batchTranslateCore(preTexts, lc, ln, onProgress);
+
+  // ポスト処理：マーカーを正しい訳語に復元
+  return results.map((r, i) => glossaryPost(r, preMaps[i].map));
+}
 
 // 起動ログ
 logMsg('翻訳ウォッチャー Pro 起動', 'sec');
